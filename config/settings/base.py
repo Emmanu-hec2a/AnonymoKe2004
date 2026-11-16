@@ -106,7 +106,10 @@ SMILE_ID_LINK_HOSTS = env.list(
     "SMILE_ID_LINK_HOSTS", default=["links.usesmileid.com", "links.smileidentity.com"]
 )
 VERIFICATION_WEBHOOK_SECRET = env("VERIFICATION_WEBHOOK_SECRET", default="")
-RESEND_FROM_EMAIL = env("RESEND_FROM_EMAIL", default="noreply@anonymoke.co.ke")
+RESEND_FROM_EMAIL = env("RESEND_FROM_EMAIL", default="AnonymoKE <noreply@anonymoke.co.ke>")
+RESEND_REPLY_TO_EMAIL = env("RESEND_REPLY_TO_EMAIL", default="")
+EMAIL_PRIVACY_URL = env("EMAIL_PRIVACY_URL", default="")
+EMAIL_TERMS_URL = env("EMAIL_TERMS_URL", default="")
 RESEND_API_KEY = env("RESEND_API_KEY", default="")
 MAGIC_LINK_BASE_URL = env("MAGIC_LINK_BASE_URL", default="anonymoke://auth/magic-link?token=")
 GOOGLE_OIDC_CLIENT_ID = env("GOOGLE_OIDC_CLIENT_ID", default="")
@@ -131,7 +134,10 @@ FIREBASE_PROJECT_ID = env("FIREBASE_PROJECT_ID", default="anonymoke-e038b")
 DARAJA_BASE_URL = env("DARAJA_BASE_URL", default="https://sandbox.safaricom.co.ke")
 DARAJA_CONSUMER_KEY = env("DARAJA_CONSUMER_KEY", default="")
 DARAJA_CONSUMER_SECRET = env("DARAJA_CONSUMER_SECRET", default="")
+# Daraja go-live store/head-office shortcode authenticates STK requests and queries.
 DARAJA_SHORTCODE = env("DARAJA_SHORTCODE", default="")
+# The customer-facing Buy Goods Till receives the payment (PartyB).
+DARAJA_TILL_NUMBER = env("DARAJA_TILL_NUMBER", default="")
 DARAJA_PASSKEY = env("DARAJA_PASSKEY", default="")
 DARAJA_CALLBACK_BASE_URL = env("DARAJA_CALLBACK_BASE_URL", default="")
 DARAJA_CALLBACK_TOKEN = env("DARAJA_CALLBACK_TOKEN", default="")

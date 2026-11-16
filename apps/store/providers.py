@@ -57,6 +57,7 @@ class DarajaPaymentProvider(BasePaymentProvider):
             settings.DARAJA_CONSUMER_KEY,
             settings.DARAJA_CONSUMER_SECRET,
             settings.DARAJA_SHORTCODE,
+            settings.DARAJA_TILL_NUMBER,
             settings.DARAJA_PASSKEY,
             settings.DARAJA_CALLBACK_BASE_URL,
         )
@@ -100,10 +101,10 @@ class DarajaPaymentProvider(BasePaymentProvider):
             "BusinessShortCode": settings.DARAJA_SHORTCODE,
             "Password": self._password(timestamp),
             "Timestamp": timestamp,
-            "TransactionType": "CustomerPayBillOnline",
+            "TransactionType": "CustomerBuyGoodsOnline",
             "Amount": amount_kes,
             "PartyA": phone,
-            "PartyB": settings.DARAJA_SHORTCODE,
+            "PartyB": settings.DARAJA_TILL_NUMBER,
             "PhoneNumber": phone,
             "CallBackURL": (
                 f"{settings.DARAJA_CALLBACK_BASE_URL.rstrip('/')}/api/v1/payments/daraja/"

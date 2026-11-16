@@ -17,27 +17,38 @@ draft is released when setup succeeds. Returning to prior steps preserves the
 current choices; changing accounts clears them.
 
 The combined legal checkbox records separate terms and privacy decisions. The
-Read Terms and Privacy Policy actions open external HTTPS documents separately
-and never check the consent box. Opening a link is not treated as acceptance.
+Read Terms and Privacy Policy actions open the supplied bundled documents in
+an offline-capable in-app reader by default and never check the consent box. Opening a link is not treated as acceptance.
 These links do not establish that a document was read.
 
-## Published documents and client configuration
+## Bundled documents and client configuration
 
-Configure these Flutter build definitions before live onboarding:
+The user-supplied documents effective 16 November 2026 are included in the
+mobile assets. The reader is available before sign-in, from Step 5, and from
+Profile in live and Demo builds. It supports selectable text, section navigation,
+system text scaling, error/retry states and reading without network access.
+Only invisible pasted formatting characters were removed from the supplied text.
 
-| Definition | Purpose |
+No document URL build definitions are needed for the bundled reader.
+
+| Definition | Default and override |
 | --- | --- |
-| `TERMS_URL` | Published HTTPS Terms document. |
-| `PRIVACY_POLICY_URL` | Published HTTPS Privacy Policy document. |
-| `CONSENT_VERSION` | Revision recorded for the displayed documents; defaults to the existing `2026-01` contract. |
+| `TERMS_URL` | Bundled `/legal/terms`; may be overridden by a published HTTPS Terms URL. |
+| `PRIVACY_POLICY_URL` | Bundled `/legal/privacy`; may be overridden by a published HTTPS Privacy URL. |
+| `CONSENT_VERSION` | `2026-11-16`, matching the bundled documents. |
 
-Both URLs must be HTTPS without embedded credentials. The revision must be
-nonempty and at most 64 characters. Live completion is disabled and the
-controller rejects saving when this configuration is missing. Demo may preview
-the flow without published documents; it records no server consent or profile.
-Policy content, publication, version selection and legal review are launch work.
-The backend stores the supplied revision; it does not independently fetch the
-documents or verify their contents.
+External URLs must be HTTPS without embedded credentials. A revision must be
+nonempty and at most 64 characters. A revision that conflicts with any bundled
+document blocks live completion. Explicitly missing or invalid documents still
+block live completion. The backend stores the revision supplied by the client;
+it does not independently fetch the documents or verify their contents.
+
+New consent writes from Profile and Discover use the same revision provider.
+Historical consent records retain their recorded revision. Opening any document
+does not create or change a consent record. Demo records no server consent.
+
+The bundled files do not publish public HTTPS pages for email footers or store
+listings. Configure those URLs after the corresponding pages are published.
 
 ## Final submission
 

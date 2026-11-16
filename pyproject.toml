@@ -42,6 +42,7 @@ dev = [
 include = ["apps*", "config*"]
 
 [tool.setuptools.package-data]
+"apps.accounts" = ["resources/*.jpeg", "templates/accounts/emails/*.html", "templates/accounts/emails/*.txt"]
 "apps.profiles" = ["resources/*.xml"]
 
 [tool.ruff]

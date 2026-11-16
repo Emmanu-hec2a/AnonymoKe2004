@@ -32,7 +32,8 @@ Set these in the Railway environment, never in Git:
 - `ALLOWED_HOSTS` containing the Railway domain and final API domain
 - `LOCATION_HMAC_SECRET`
 - `FIELD_ENCRYPTION_KEY`
-- `RESEND_API_KEY` and `RESEND_FROM_EMAIL`
+- `RESEND_API_KEY` and `RESEND_FROM_EMAIL=AnonymoKE <noreply@anonymoke.co.ke>`; optional reply inbox and
+  legal footer URLs are described in [email-branding.md](email-branding.md)
 - Google and Apple provider credentials
 - R2 endpoint, access key, secret key, and bucket names
 - Media limits and `MEDIA_REQUIRE_EXACTLY_ONE_FACE`
@@ -40,8 +41,15 @@ Set these in the Railway environment, never in Git:
 - `FIREBASE_PROJECT_ID=anonymoke-e038b`
 - `FIREBASE_SERVICE_ACCOUNT_JSON` containing the Firebase Admin service-account JSON for the project
 - Verification, moderation, and Sentry credentials when those integrations are enabled
-- `PAYMENT_PROVIDER=daraja` plus Daraja consumer key/secret, shortcode, passkey,
-  `DARAJA_CALLBACK_BASE_URL`, and a high-entropy `DARAJA_CALLBACK_TOKEN` before enabling purchases
+- `PAYMENT_PROVIDER=daraja` plus Daraja consumer key/secret, `DARAJA_SHORTCODE`,
+  `DARAJA_TILL_NUMBER`, passkey, `DARAJA_CALLBACK_BASE_URL`, and a high-entropy
+  `DARAJA_CALLBACK_TOKEN` before enabling purchases
+
+Payments use Buy Goods STK Push (`CustomerBuyGoodsOnline`). Set `DARAJA_SHORTCODE` to the store/head-office
+shortcode registered during Daraja go-live; it supplies `BusinessShortCode` and the password for both STK
+initiation and status queries. Set `DARAJA_TILL_NUMBER` to the receiving customer-facing Till number; it
+supplies `PartyB`. Both values must be configured explicitly, even when Safaricom assigns the same number.
+For live payments, set `DARAJA_BASE_URL=https://api.safaricom.co.ke`. Keep the sandbox URL for staging tests.
 
 ## Worker and beat variables
 

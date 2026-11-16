@@ -66,6 +66,13 @@ domain entitlements by itself. Publish the domain's `assetlinks.json` and
 configuration, and set `MAGIC_LINK_BASE_URL` to that HTTPS URL. Test delivery and
 handoff with the actual email clients on physical devices.
 
+## Branded sign-in email
+
+The backend sends the supplied AK eye-and-heart logo, dark brand styling, the
+violet sign-in action, matching HTML/plain-text expiry and a transactional footer.
+See [email-branding.md](email-branding.md) for the friendly sender address,
+optional footer links, bundled assets and separate inbox-avatar/BIMI setup.
+
 ## Configuration
 
 | Setting | Where | Purpose |
@@ -78,7 +85,7 @@ handoff with the actual email clients on physical devices.
 | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Django environment | Resend key and verified sender domain/address. |
 | `MAGIC_LINK_BASE_URL` | Django environment | Email link prefix, including `?token=`. |
 | `AUTH_LINK_HOST` | Flutter build definition | Optional owned HTTPS auth hostname; requires native domain association as described above. |
-| `TERMS_URL`, `PRIVACY_POLICY_URL`, `CONSENT_VERSION` | Flutter build definitions | Shared onboarding policy-document configuration. |
+| `TERMS_URL`, `PRIVACY_POLICY_URL`, `CONSENT_VERSION` | Flutter build definitions | Default to bundled in-app policies, revision `2026-11-16`; optional HTTPS overrides must match the displayed revision. |
 
 Register the Android package and signing certificate fingerprints in Google
 Cloud/Firebase. iOS includes the Sign in with Apple entitlement in the Runner
@@ -86,6 +93,18 @@ build configurations; enable that capability for the App ID and use a matching
 provisioning profile. No server credentials or signing keys were added to source.
 The existing Firebase app startup also requires the matching iOS Firebase
 configuration when building for iOS.
+
+The configured mobile Google Web/server audience is:
+
+```env
+GOOGLE_OIDC_CLIENT_ID=441811643862-eekavq3aeaa7nbigi5omagv354a482h0.apps.googleusercontent.com
+```
+
+Set this value in Railway. The mobile app includes it as its default
+`GOOGLE_WEB_CLIENT_ID` and Android type-3 OAuth client. Platform client IDs and
+signing fingerprints still need registration in the same Google Cloud project.
+This native ID-token flow does not consume a Google client secret or use a web
+OAuth redirect endpoint.
 
 ## Backend guarantees
 

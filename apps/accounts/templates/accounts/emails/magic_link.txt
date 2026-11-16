@@ -1,0 +1,26 @@
+{% autoescape off %}AnonymoKE
+Your private sign-in link
+
+You're one tap away.
+Open AnonymoKE and continue securely. No password to remember.
+
+Sign in securely:
+{{ sign_in_url }}
+
+Expires in {{ ttl_minutes }} minute{{ ttl_minutes|pluralize }}. Can only be used once.
+Open this link on a device with AnonymoKE installed.
+
+Keep this link private.
+Never forward this email or share your sign-in link.
+We will never ask you to send it to us.
+
+You received this email because a sign-in link was requested for this address.
+If it wasn't you, you can safely ignore it.
+
+https://anonymoke.co.ke
+{% if privacy_url %}Privacy: {{ privacy_url }}
+{% endif %}{% if terms_url %}Terms: {{ terms_url }}
+{% endif %}{% if reply_to_email %}Support: {{ reply_to_email }}
+{% endif %}
+Copyright {{ year }} AnonymoKE. Private by choice.
+{% endautoescape %}
