@@ -22,7 +22,7 @@ class Migration(migrations.Migration):
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
             ],
-            options={"indexes": [models.Index(fields=["is_active", "kind"])]},
+            options={"indexes": [models.Index(fields=["is_active", "kind"], name="store_produ_is_acti_755c4c_idx")]},
         ),
         migrations.CreateModel(
             name="Purchase",
@@ -44,7 +44,7 @@ class Migration(migrations.Migration):
                 ("product", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="purchases", to="store.product")),
                 ("user", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name="purchases", to=settings.AUTH_USER_MODEL)),
             ],
-            options={"indexes": [models.Index(fields=["user", "status", "created_at"])], "constraints": [models.UniqueConstraint(fields=("user", "idempotency_key"), name="unique_user_purchase_idempotency")]},
+            options={"indexes": [models.Index(fields=["user", "status", "created_at"], name="store_purch_user_id_7fff15_idx")], "constraints": [models.UniqueConstraint(fields=("user", "idempotency_key"), name="unique_user_purchase_idempotency")]},
         ),
         migrations.CreateModel(
             name="PaymentCallbackLog",
@@ -55,7 +55,7 @@ class Migration(migrations.Migration):
                 ("received_at", models.DateTimeField(auto_now_add=True)),
                 ("processed_at", models.DateTimeField(blank=True, null=True)),
             ],
-            options={"indexes": [models.Index(fields=["received_at", "processed_at"])]},
+            options={"indexes": [models.Index(fields=["received_at", "processed_at"], name="store_payme_receive_56b5ca_idx")]},
         ),
         migrations.CreateModel(
             name="Entitlement",
@@ -69,6 +69,6 @@ class Migration(migrations.Migration):
                 ("source_purchase", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="entitlements", to="store.purchase")),
                 ("user", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="entitlements", to=settings.AUTH_USER_MODEL)),
             ],
-            options={"indexes": [models.Index(fields=["user", "kind", "expires_at"])], "constraints": [models.UniqueConstraint(fields=("source_purchase", "kind"), name="unique_source_entitlement_kind")]},
+            options={"indexes": [models.Index(fields=["user", "kind", "expires_at"], name="store_entit_user_id_7a085d_idx")], "constraints": [models.UniqueConstraint(fields=("source_purchase", "kind"), name="unique_source_entitlement_kind")]},
         ),
     ]
