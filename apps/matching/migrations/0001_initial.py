@@ -1,5 +1,6 @@
 import uuid
 
+import django.db.models.deletion
 from django.db import migrations, models
 
 
@@ -16,8 +17,8 @@ class Migration(migrations.Migration):
                 ("client_swipe_id", models.UUIDField()),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
-                ("from_profile", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="swipes_made", to="profiles.profile")),
-                ("to_profile", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="swipes_received", to="profiles.profile")),
+                ("from_profile", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="swipes_made", to="profiles.profile")),
+                ("to_profile", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="swipes_received", to="profiles.profile")),
             ],
             options={
                 "indexes": [models.Index(fields=["to_profile", "action", "created_at"], name="matching_sw_to_profi_65a9c2_idx"), models.Index(fields=["from_profile", "created_at"], name="matching_sw_from_pr_29954b_idx")],
@@ -36,9 +37,9 @@ class Migration(migrations.Migration):
                 ("unmasked_at", models.DateTimeField(blank=True, null=True)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
-                ("closed_by", models.ForeignKey(blank=True, null=True, on_delete=models.deletion.SET_NULL, related_name="matches_closed", to="profiles.profile")),
-                ("profile_a", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="matches_as_a", to="profiles.profile")),
-                ("profile_b", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="matches_as_b", to="profiles.profile")),
+                ("closed_by", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name="matches_closed", to="profiles.profile")),
+                ("profile_a", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="matches_as_a", to="profiles.profile")),
+                ("profile_b", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="matches_as_b", to="profiles.profile")),
             ],
             options={
                 "indexes": [models.Index(fields=["profile_a", "state"], name="matching_ma_profile_3b1bca_idx"), models.Index(fields=["profile_b", "state"], name="matching_ma_profile_9dfb6f_idx")],

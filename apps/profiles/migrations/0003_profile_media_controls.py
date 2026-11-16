@@ -2,7 +2,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-    dependencies = [("profiles", "0002_profile_onboarding_fields")]
+    dependencies = [("profiles", "0003_mediaasset")]
     operations = [
         migrations.AddField(model_name="profile", name="audio_disguised", field=models.BooleanField(default=False)),
         migrations.AddField(model_name="mediaasset", name="disguise_voice", field=models.BooleanField(default=True)),

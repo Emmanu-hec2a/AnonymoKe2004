@@ -90,7 +90,8 @@ SMILE_ID_LINK_HOSTS=links.usesmileid.com,links.smileidentity.com
 SMILE_ID_ADULT_POLICY_CONFIRMED=false
 ```
 
-Use `sandbox` in development/staging. Confirm the returned hosted link’s actual
+Use `sandbox` in development/staging. Production settings reject `sandbox` unless
+`ALLOW_SMILE_ID_SANDBOX=true` is set explicitly; remove that variable before real capture. Confirm the returned hosted link’s actual
 domain with Smile ID and add it to the allowlist if it differs; do not use a
 wildcard or disable validation. Enable the Kenyan document verification product
 on the partner account. Agree the provider’s retention and erasure procedure for

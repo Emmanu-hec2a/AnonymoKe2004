@@ -39,8 +39,13 @@ if os.getenv("PAYMENT_PROVIDER") != "daraja":
     raise ImproperlyConfigured("PAYMENT_PROVIDER must be daraja in production")
 
 DEBUG = False
-if VERIFICATION_PROVIDER != "smile_id" or SMILE_ID_ENVIRONMENT != "production":  # noqa: F405
-    raise ImproperlyConfigured("Production verification requires Smile ID production credentials")
+_allow_smile_sandbox = os.getenv("ALLOW_SMILE_ID_SANDBOX", "").lower() == "true"
+_allowed_smile_environments = {"production"} | ({"sandbox"} if _allow_smile_sandbox else set())
+if VERIFICATION_PROVIDER != "smile_id" or SMILE_ID_ENVIRONMENT not in _allowed_smile_environments:  # noqa: F405
+    raise ImproperlyConfigured(
+        "Production verification requires Smile ID production credentials "
+        "(set ALLOW_SMILE_ID_SANDBOX=true to permit the sandbox environment)"
+    )
 SECURE_SSL_REDIRECT = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_CONTENT_TYPE_NOSNIFF = True
