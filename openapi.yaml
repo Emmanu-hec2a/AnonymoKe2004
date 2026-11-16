@@ -1,0 +1,1074 @@
+openapi: 3.1.0
+info:
+  title: AnonymoKE API
+  version: 0.1.0
+  description: >-
+    Draft Phase 0 contract. User-facing identity, location, matching, and
+    payment fields are intentionally absent until their owning phase is approved.
+servers:
+  - url: /api/v1
+tags:
+  - name: System
+  - name: Authentication
+  - name: Safety
+  - name: Moderation
+  - name: Store
+  - name: Finance
+paths:
+  /auth/magic-link/request/:
+    post:
+      operationId: requestMagicLink
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MagicLinkRequest'
+      responses:
+        '202':
+          description: Accepted without revealing whether the email exists. Cooldown and hourly suppression use the same response. Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: {type: boolean}
+                  resend_after_seconds: {type: integer, minimum: 1, example: 60}
+                  expires_in_seconds: {type: integer, minimum: 60, example: 600}
+        '400': {description: Invalid email address.}
+        '429': {description: Request IP throttled.}
+        '503': {description: Email delivery is unconfigured or temporarily unavailable.}
+  /auth/magic-link/verify/:
+    post:
+      operationId: verifyMagicLink
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MagicLinkVerify'
+      responses:
+        '200':
+          description: Unified session payload. Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400': {description: Invalid, expired, or already-used link.}
+  /auth/social/{provider}/verify/:
+    post:
+      operationId: verifySocialLogin
+      tags: [Authentication]
+      security: []
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+            enum: [google, apple]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialVerify'
+      responses:
+        '200':
+          description: Unified session payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '503': {description: Provider adapter is not configured.}
+  /auth/token/refresh/:
+    post:
+      operationId: refreshToken
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: {type: string}
+      responses:
+        '200':
+          description: Rotated session payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401': {description: Invalid or reused refresh token.}
+  /auth/logout/:
+    post:
+      operationId: logout
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: {type: string}
+      responses:
+        '204': {description: Refresh token revoked or already invalid.}
+  /me/consents/:
+    get:
+      operationId: listConsents
+      tags: [Account]
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Latest consent state per consent type. Responses use Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Consent'}
+    post:
+      operationId: recordConsent
+      tags: [Account]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConsentWrite'}
+      responses:
+        '201':
+          description: Consent recorded, or the identical latest decision returned on retry. Responses use Cache-Control no-store.
+        '401': {description: Authentication required.}
+  /me/account/:
+    delete:
+      operationId: requestAccountErasure
+      tags: [Account]
+      security: [{bearerAuth: []}]
+      description: >-
+        Permanently deletes account-linked data and media. Financial transaction records are
+        anonymized and retained for the statutory retention period.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm: {type: boolean, const: true}
+      responses:
+        '204': {description: Account data erased.}
+        '400': {description: Explicit confirmation is required.}
+  /me/notifications/devices/:
+    post:
+      operationId: registerNotificationDevice
+      tags: [Account]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationDeviceWrite'
+      responses:
+        '200': {description: Existing device token refreshed.}
+        '201': {description: New device token registered.}
+        '400': {description: Invalid device token payload.}
+    delete:
+      operationId: disableNotificationDevice
+      tags: [Account]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string, minLength: 20, maxLength: 4096}
+      responses:
+        '204': {description: Device token disabled.}
+  /me/profile/:
+    get:
+      operationId: getMyProfile
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Owner profile fields and short-lived private/blurred media URLs. Never use this owner response for another person's discovery card.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProfileRead'}
+    patch:
+      operationId: updateMyProfile
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      description: >-
+        Updates profile fields and matching preferences atomically. Onboarding sends
+        target_genders, min_age_pref, max_age_pref and max_distance_km together after
+        recording consent and validating the selected photo. The write-only
+        onboarding_photo_upload_id must refer to the owner's ready, active avatar.
+        An account without a private photo and blurred counterpart remains incomplete.
+        Matching fields require sensitive-data consent; distance
+        requires location consent. A failed validation or database write rolls back
+        all changes in this request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProfileWrite'}
+      responses:
+        '200': {description: Updated owner profile and matching preferences.}
+        '400': {description: Invalid fields; no profile or preference changes were saved.}
+        '403': {description: Required matching or location consent is missing.}
+  /me/preferences/:
+    get:
+      operationId: getMyPreferences
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Owner-only target_genders, or an empty list without matching consent.}
+    put:
+      operationId: updateMyPreferences
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_genders]
+              properties:
+                target_genders:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  uniqueItems: true
+                  items: {type: string, enum: [M, W, NB, ALL]}
+      responses:
+        '204': {description: Preferences updated.}
+        '403': {description: Sensitive-data consent is required.}
+  /me/location/:
+    put:
+      operationId: updateMyLocation
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      description: >-
+        Accepts foreground location transiently, snaps it server-side, and persists only the snapped cell.
+        Raw coordinates are never returned or persisted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon, accuracy_m, is_mock, captured_at]
+              properties:
+                lat: {type: number, format: double}
+                lon: {type: number, format: double}
+                accuracy_m: {type: number, minimum: 0}
+                is_mock: {type: boolean}
+                captured_at: {type: string, format: date-time}
+      responses:
+        '204': {description: Location accepted and snapped.}
+        '403': {description: Location consent is required.}
+  /me/data-export/:
+    post:
+      operationId: exportMyData
+      tags: [Account]
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Owner-scoped JSON attachment with account/profile, consent, authored chat, media metadata, financial and safety records. Excludes credentials and media binaries.}
+        '429': {description: Export rate limit exceeded.}
+  /me/media/{kind}/:
+    delete:
+      operationId: deleteMyMedia
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: kind
+          required: true
+          schema: {type: string, enum: [avatar, audio]}
+      responses:
+        '204': {description: Owned media objects and active references deleted.}
+        '503': {description: Storage deletion unavailable; retry without losing account records.}
+  /me/media/upload-url/:
+    post:
+      operationId: createMediaUpload
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      description: >-
+        Audio uploads require active voice consent. Onboarding records and previews
+        a local draft first, then requests this ticket only after final voice consent.
+        disguise_voice is captured on the upload and applied by the media worker.
+        Avatar uploads require active privacy and sensitive-data consent. Image
+        formats are JPEG, PNG or WebP; the byte limit is 10 MB. Images must be still,
+        at least 200 pixels per side, at most 8000 per side and at most 32 megapixels.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MediaUpload'}
+      responses:
+        '201':
+          description: Presigned private-bucket upload URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [upload_id, method, upload_url, headers, expires_in_seconds]
+                properties:
+                  upload_id: {type: string, format: uuid}
+                  method: {type: string, enum: [PUT]}
+                  upload_url: {type: string, format: uri}
+                  headers: {type: object, additionalProperties: {type: string}}
+                  expires_in_seconds: {type: integer}
+  /me/media/complete/:
+    post:
+      operationId: completeMediaUpload
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      description: >-
+        Owner-only and retryable for the same upload_id. Processing status does not
+        mean the capsule is ready for playback. The worker validates duration,
+        strips metadata, limits shared audio to 15 seconds and publishes only
+        processed audio while voice consent remains active.
+        Avatar processing checks the face requirement and strips identifying metadata;
+        privacy and sensitive-data consent are rechecked before photo publication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [upload_id]
+              properties:
+                upload_id: {type: string, format: uuid}
+      responses:
+        '202':
+          description: Media queued for validation and processing.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaStatus'}
+  /me/media/status/:
+    get:
+      operationId: listMediaStatus
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Processing status for the authenticated user's media assets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/MediaStatus'}
+  /me/media/status/{upload_id}/:
+    get:
+      operationId: getMediaUploadStatus
+      tags: [Profile]
+      security: [{bearerAuth: []}]
+      description: Owner-only status for one upload. Does not expose storage keys or original media. Responses use Cache-Control no-store.
+      parameters:
+        - in: path
+          name: upload_id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Status of the owned upload.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaStatus'}
+        '404': {description: Upload not found or belongs to another account.}
+  /me/verification/start/:
+    post:
+      operationId: startVerification
+      tags: [Verification]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purpose]
+              properties:
+                purpose: {type: string, enum: [age_check, identity_check]}
+      responses:
+        '201': {description: Verification attempt created.}
+  /me/verification/status/:
+    get:
+      operationId: getVerificationStatus
+      tags: [Verification]
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Current verification level and recent attempts.}
+  /discover/:
+    get:
+      operationId: discoverProfiles
+      tags: [Discovery]
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: max_distance_km
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50}
+        - in: query
+          name: min_age
+          required: false
+          schema: {type: integer, minimum: 18, maximum: 100}
+        - in: query
+          name: max_age
+          required: false
+          schema: {type: integer, minimum: 18, maximum: 100}
+      responses:
+        '200':
+          description: Explicitly whitelisted masked discovery cards.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/DiscoveryCard'}
+                  next_cursor: {type: string, nullable: true}
+  /swipes/:
+    post:
+      operationId: recordSwipe
+      tags: [Matching]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SwipeWrite'}
+      responses:
+        '200':
+          description: Idempotent swipe result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [is_match, match_id]
+                properties:
+                  is_match: {type: boolean}
+                  match_id: {type: string, format: uuid, nullable: true}
+  /matches/:
+    get:
+      operationId: listMatches
+      tags: [Matching]
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Masked match summaries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/MatchSummary'}
+  /matches/{match_id}/:
+    get:
+      operationId: getMatch
+      tags: [Matching]
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/MatchId'}
+      responses:
+        '200': {description: Masked match summary.}
+  /matches/{match_id}/unmask/request/:
+    post:
+      operationId: requestUnmask
+      tags: [Unmasking]
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/MatchId'}
+      responses:
+        '200': {description: Unmask consent recorded.}
+        '403': {description: Verification is required before unmasking.}
+  /matches/{match_id}/unmask/respond/:
+    post:
+      operationId: respondUnmask
+      tags: [Unmasking]
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/MatchId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accept]
+              properties:
+                accept: {type: boolean}
+      responses:
+        '200': {description: Unmask response recorded.}
+  /matches/{match_id}/unmask/withdraw/:
+    post:
+      operationId: withdrawUnmask
+      tags: [Unmasking]
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/MatchId'}
+      responses:
+        '200': {description: Pending unmask consent withdrawn.}
+  /matches/{match_id}/revealed/:
+    get:
+      operationId: getRevealedIdentity
+      tags: [Unmasking]
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/MatchId'}
+      responses:
+        '200':
+          description: Identity fields available only after mutual consent.
+        '403': {description: Mutual unmask consent is not complete.}
+  /matches/{match_id}/messages/:
+    get:
+      operationId: listMessages
+      tags: [Chat]
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/MatchId'}
+        - in: query
+          name: before
+          schema: {type: string, format: date-time}
+      responses:
+        '200':
+          description: Cursor-paginated masked chat messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Message'}}
+                  next_cursor: {type: string, format: date-time, nullable: true}
+    post:
+      operationId: sendMessage
+      tags: [Chat]
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/MatchId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, maxLength: 2000}
+      responses:
+        '201': {description: Message created and queued for moderation.}
+        '400': {description: Contact exchange, blocked content, or invalid message.}
+  /matches/{match_id}/read/:
+    post:
+      operationId: markMessagesRead
+      tags: [Chat]
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/MatchId'}
+      responses:
+        '200': {description: Number of messages marked read.}
+  /reports/:
+    post:
+      operationId: createReport
+      tags: [Safety]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportWrite'
+      responses:
+        '201': {description: Report accepted for safety review.}
+        '400': {description: Invalid target or evidence message IDs.}
+  /blocks/:
+    post:
+      operationId: blockProfile
+      tags: [Safety]
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlockWrite'
+      responses:
+        '201': {description: Profile blocked and any active match closed.}
+  /blocks/{profile_id}/:
+    delete:
+      operationId: unblockProfile
+      tags: [Safety]
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: profile_id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '204': {description: Block removed.}
+        '404': {description: Block not found.}
+  /admin/reports/:
+    get:
+      operationId: listModerationReports
+      tags: [Moderation]
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: status
+          schema: {type: string, enum: [open, review, resolved, dismissed]}
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - in: query
+          name: offset
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        '200':
+          description: Privacy-safe moderation queue.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/AdminReport'}}
+                  next_offset: {type: integer, nullable: true}
+  /admin/reports/{report_id}/action/:
+    post:
+      operationId: actionModerationReport
+      tags: [Moderation]
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: report_id
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+      responses:
+        '200': {description: Action applied and audit logged.}
+        '403': {description: Staff moderation role required.}
+  /admin/moderation/flags/:
+    get:
+      operationId: listModerationFlags
+      tags: [Moderation]
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: status
+          schema: {type: string}
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - in: query
+          name: offset
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        '200': {description: Privacy-safe moderation flags without raw content.}
+  /admin/purchases/:
+    get:
+      operationId: listAdminPurchases
+      tags: [Finance]
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: status
+          schema: {type: string, enum: [pending, completed, failed, cancelled, expired]}
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - in: query
+          name: offset
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        '200': {description: Finance-role purchase queue without phone or callback payloads.}
+        '403': {description: Finance staff role required.}
+  /store/products/:
+    get:
+      operationId: listStoreProducts
+      tags: [Store]
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Active KES products.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Product'}
+  /purchases/:
+    post:
+      operationId: createPurchase
+      tags: [Store]
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: {type: string, maxLength: 128}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_code, phone]
+              properties:
+                product_code: {type: string}
+                phone: {type: string, description: Kenyan M-PESA number; never returned}
+      responses:
+        '201':
+          description: STK push initiated.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Purchase'}
+        '503': {description: Payment provider unavailable.}
+  /purchases/{purchase_id}/:
+    get:
+      operationId: getPurchase
+      tags: [Store]
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: purchase_id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Owner-only purchase status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Purchase'}
+        '404': {description: Purchase not found.}
+  /me/entitlements/:
+    get:
+      operationId: listEntitlements
+      tags: [Store]
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Active owner entitlements.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Entitlement'}
+  /payments/daraja/callback/{callback_token}/:
+    post:
+      operationId: darajaPaymentCallback
+      tags: [Store]
+      security: []
+      parameters:
+        - in: path
+          name: callback_token
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200': {description: Callback accepted after server-side status confirmation.}
+        '403': {description: Invalid callback token.}
+  /config/:
+    get:
+      operationId: getConfig
+      tags: [System]
+      security: []
+      responses:
+        '200':
+          description: Public client configuration and kill switches.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Config'
+  /healthz:
+    get:
+      operationId: health
+      tags: [System]
+      security: []
+      responses:
+        '200':
+          description: Service is alive.
+  /readyz:
+    get:
+      operationId: readiness
+      tags: [System]
+      security: []
+      responses:
+        '200':
+          description: Service is ready.
+        '503':
+          description: Dependency check failed.
+components:
+  parameters:
+    MatchId:
+      in: path
+      name: match_id
+      required: true
+      schema: {type: string, format: uuid}
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Consent:
+      type: object
+      required: [type, version, granted, granted_at]
+      properties:
+        type: {type: string, enum: [terms, privacy, location, voice, sensitive_data]}
+        version: {type: string}
+        granted: {type: boolean}
+        granted_at: {type: string, format: date-time}
+        revoked_at: {type: string, format: date-time, nullable: true}
+    ConsentWrite:
+      type: object
+      required: [type, version, granted]
+      properties:
+        type: {type: string, enum: [terms, privacy, location, voice, sensitive_data]}
+        version: {type: string}
+        granted: {type: boolean}
+    ProfileWrite:
+      type: object
+      description: Matching ages must satisfy 18 <= min_age_pref <= max_age_pref <= 100.
+      properties:
+        alias: {type: string, minLength: 2, maxLength: 40}
+        gender: {type: string, enum: [M, W, NB]}
+        birth_date: {type: string, format: date}
+        onboarding_photo_upload_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          description: Final onboarding receipt for an owned, ready avatar whose private and blurred keys match the active profile photo. Requires active terms, privacy, location and sensitive_data consent.
+        height_cm: {type: integer, minimum: 100, maximum: 250, nullable: true}
+        bio: {type: string, maxLength: 300}
+        interests:
+          type: array
+          maxItems: 10
+          items: {type: string, minLength: 2, maxLength: 24}
+        language: {type: string, enum: [en, sw]}
+        is_discoverable: {type: boolean}
+        max_distance_km: {type: integer, minimum: 1, maximum: 50}
+        min_age_pref: {type: integer, minimum: 18, maximum: 100}
+        max_age_pref: {type: integer, minimum: 18, maximum: 100}
+        target_genders:
+          type: array
+          description: One or more specific genders, or ALL alone.
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: {type: string, enum: [M, W, NB, ALL]}
+    ProfileRead:
+      type: object
+      properties:
+        public_id: {type: string, format: uuid}
+        alias: {type: string}
+        age_years: {type: integer, nullable: true}
+        min_age_pref: {type: integer, minimum: 18, maximum: 100}
+        max_age_pref: {type: integer, minimum: 18, maximum: 100}
+        max_distance_km: {type: integer, minimum: 1, maximum: 50}
+        bio: {type: string}
+        interests: {type: array, items: {type: string}}
+        target_genders: {type: array, items: {type: string}}
+        verification_level: {type: string, enum: [none, age_verified, verified]}
+        has_avatar: {type: boolean}
+        avatar_url: {type: string, format: uri, nullable: true}
+        blurred_avatar_url: {type: string, format: uri, nullable: true}
+        audio_url: {type: string, format: uri, nullable: true}
+        audio_duration_ms: {type: integer}
+        audio_disguised: {type: boolean}
+    MediaUpload:
+      type: object
+      required: [kind, content_type, size_bytes]
+      properties:
+        kind: {type: string, enum: [avatar, audio]}
+        content_type: {type: string, enum: [image/jpeg, image/png, image/webp, audio/mp4, audio/x-m4a]}
+        size_bytes: {type: integer, minimum: 1}
+        disguise_voice: {type: boolean, default: true}
+    MediaStatus:
+      type: object
+      required: [upload_id, kind, status, created_at]
+      properties:
+        upload_id: {type: string, format: uuid}
+        kind: {type: string, enum: [avatar, audio]}
+        status: {type: string, enum: [pending, processing, ready, rejected]}
+        duration_ms: {type: integer, nullable: true}
+        rejection_code: {type: string}
+        created_at: {type: string, format: date-time}
+    MagicLinkRequest:
+      type: object
+      required: [email]
+      properties:
+        email: {type: string, format: email}
+    MagicLinkVerify:
+      type: object
+      required: [token]
+      properties:
+        token: {type: string}
+    SocialVerify:
+      type: object
+      required: [credential]
+      properties:
+        credential: {type: string}
+    Session:
+      type: object
+      required: [user_id, access_token, refresh_token, access_expires_at, refresh_expires_at, is_onboarded]
+      properties:
+        user_id: {type: string, format: uuid}
+        access_token: {type: string}
+        refresh_token: {type: string}
+        access_expires_at: {type: string, format: date-time}
+        refresh_expires_at: {type: string, format: date-time}
+        is_onboarded: {type: boolean}
+    NotificationDeviceWrite:
+      type: object
+      required: [token, platform]
+      properties:
+        token: {type: string, minLength: 20, maxLength: 4096}
+        platform: {type: string, enum: [android, ios]}
+        app_version: {type: string, maxLength: 32}
+    Config:
+      type: object
+      required: [api_version, min_supported_version, maintenance_mode, features, distance_bucket_labels]
+      properties:
+        api_version: {type: string}
+        min_supported_version: {type: string}
+        maintenance_mode: {type: boolean}
+        features:
+          type: object
+          additionalProperties: {type: boolean}
+        legal_document_versions:
+          type: object
+          additionalProperties: {type: string}
+        distance_bucket_labels:
+          type: array
+          items: {type: string}
+    DiscoveryCard:
+      type: object
+      required: [profile_id, alias, age_years, distance_bucket, interests, is_verified, is_boosted]
+      properties:
+        profile_id: {type: string, format: uuid}
+        alias: {type: string}
+        age_years: {type: integer}
+        distance_bucket: {type: string, enum: ["<1 km", "1-2 km", "2-5 km", "5-10 km", "10-25 km", "25+ km"]}
+        interests: {type: array, items: {type: string}}
+        blurred_avatar_url: {type: string, format: uri, nullable: true}
+        audio_url: {type: string, format: uri, nullable: true}
+        audio_duration_s: {type: number, nullable: true}
+        is_verified: {type: boolean}
+        is_boosted: {type: boolean}
+    SwipeWrite:
+      type: object
+      required: [profile_id, action, client_swipe_id]
+      properties:
+        profile_id: {type: string, format: uuid}
+        action: {type: string, enum: [like, pass]}
+        client_swipe_id: {type: string, format: uuid}
+    MatchSummary:
+      type: object
+      required: [match_id, profile_id, alias, age_years, state, created_at]
+      properties:
+        match_id: {type: string, format: uuid}
+        profile_id: {type: string, format: uuid}
+        alias: {type: string}
+        age_years: {type: integer}
+        state: {type: string, enum: [masked, unmasked]}
+        created_at: {type: string, format: date-time}
+    Message:
+      type: object
+      required: [message_id, sender_profile_id, body, moderation_status, created_at, read_at]
+      properties:
+        message_id: {type: string, format: uuid}
+        sender_profile_id: {type: string, format: uuid}
+        body: {type: string}
+        moderation_status: {type: string, enum: [queued, clear, flagged, blocked]}
+        created_at: {type: string, format: date-time}
+        read_at: {type: string, format: date-time, nullable: true}
+    ReportWrite:
+      type: object
+      required: [profile_id, reason]
+      properties:
+        profile_id: {type: string, format: uuid}
+        reason: {type: string, enum: [solicitation, scam, harassment, fake, underage, other]}
+        note: {type: string, maxLength: 1000}
+        message_ids:
+          type: array
+          maxItems: 20
+          items: {type: string, format: uuid}
+    BlockWrite:
+      type: object
+      required: [profile_id]
+      properties:
+        profile_id: {type: string, format: uuid}
+    AdminReport:
+      type: object
+      required: [id, reported_profile_id, reason, status, evidence_message_ids, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        reported_profile_id: {type: string, format: uuid, nullable: true}
+        reason: {type: string}
+        note: {type: string}
+        evidence_message_ids: {type: array, items: {type: string, format: uuid}}
+        status: {type: string, enum: [open, review, resolved, dismissed]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ModerationAction:
+      type: object
+      required: [action]
+      properties:
+        action: {type: string, enum: [dismiss, review, resolve, suspend, ban]}
+        reason: {type: string, maxLength: 500}
+    Product:
+      type: object
+      required: [code, name, price_kes, kind]
+      properties:
+        code: {type: string}
+        name: {type: string}
+        price_kes: {type: integer, minimum: 1}
+        kind: {type: string, enum: [boost, premium, unmask_fast_track, voucher]}
+        duration_days: {type: integer, nullable: true}
+    Purchase:
+      type: object
+      required: [id, product_code, amount_kes, status, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        product_code: {type: string}
+        amount_kes: {type: integer}
+        status: {type: string, enum: [pending, completed, failed, cancelled, expired]}
+        result_code: {type: integer, nullable: true}
+        created_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time, nullable: true}
+    Entitlement:
+      type: object
+      required: [kind, quantity]
+      properties:
+        kind: {type: string, enum: [boost, premium, unmask_fast_track, voucher]}
+        quantity: {type: integer, minimum: 0}
+        expires_at: {type: string, format: date-time, nullable: true}
+
