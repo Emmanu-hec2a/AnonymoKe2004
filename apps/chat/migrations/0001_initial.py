@@ -1,5 +1,6 @@
 import uuid
 
+import django.db.models.deletion
 from django.db import migrations, models
 
 
@@ -18,8 +19,8 @@ class Migration(migrations.Migration):
                 ("read_at", models.DateTimeField(blank=True, null=True)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
-                ("match", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="messages", to="matching.match")),
-                ("sender", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="messages_sent", to="profiles.profile")),
+                ("match", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="messages", to="matching.match")),
+                ("sender", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="messages_sent", to="profiles.profile")),
             ],
             options={
                 "indexes": [models.Index(fields=["match", "created_at"], name="chat_messag_match_id_39e06e_idx"), models.Index(fields=["match", "read_at"], name="chat_messag_match_id_2f7dd4_idx")],

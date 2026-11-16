@@ -1,6 +1,7 @@
 import uuid
 
 import django.utils.timezone
+import django.db.models.deletion
 from django.db import migrations, models
 
 
@@ -36,7 +37,7 @@ class Migration(migrations.Migration):
                 ("email_verified", models.BooleanField(default=False)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
-                ("user", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="external_identities", to="accounts.user")),
+                ("user", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="external_identities", to="accounts.user")),
             ],
             options={
                 "constraints": [models.UniqueConstraint(fields=("provider", "subject"), name="unique_external_identity")],
@@ -70,7 +71,7 @@ class Migration(migrations.Migration):
                 ("expires_at", models.DateTimeField()),
                 ("revoked_at", models.DateTimeField(blank=True, null=True)),
                 ("replaced_by", models.UUIDField(blank=True, null=True)),
-                ("user", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="refresh_sessions", to="accounts.user")),
+                ("user", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="refresh_sessions", to="accounts.user")),
             ],
             options={"indexes": [models.Index(fields=["user", "expires_at"], name="accounts_re_user_id_0a413b_idx")]},
         ),

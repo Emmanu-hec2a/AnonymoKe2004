@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+import django.db.models.deletion
 from django.db import migrations, models
 
 
@@ -20,8 +21,8 @@ class Migration(migrations.Migration):
                 ("invite_expires_at", models.DateTimeField(blank=True, null=True)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
-                ("user", models.OneToOneField(on_delete=models.deletion.CASCADE, related_name="trusted_contact", to=settings.AUTH_USER_MODEL)),
-                ("linked_user", models.ForeignKey(blank=True, null=True, on_delete=models.deletion.SET_NULL, related_name="trusted_safety_relationships", to=settings.AUTH_USER_MODEL)),
+                ("user", models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name="trusted_contact", to=settings.AUTH_USER_MODEL)),
+                ("linked_user", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name="trusted_safety_relationships", to=settings.AUTH_USER_MODEL)),
             ],
             options={"indexes": [models.Index(fields=["user", "updated_at"], name="safety_trust_user_id_3bd084_idx")]},
         ),
@@ -40,7 +41,7 @@ class Migration(migrations.Migration):
                 ("panic_at", models.DateTimeField(blank=True, null=True)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
-                ("user", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="date_sessions", to=settings.AUTH_USER_MODEL)),
+                ("user", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="date_sessions", to=settings.AUTH_USER_MODEL)),
             ],
             options={
                 "indexes": [models.Index(fields=["user", "status", "starts_at"], name="safety_dates_user_id_5fe3c6_idx")],
@@ -58,8 +59,8 @@ class Migration(migrations.Migration):
                 ("metadata", models.JSONField(blank=True, default=dict)),
                 ("triggered_at", models.DateTimeField(auto_now_add=True)),
                 ("delivered_at", models.DateTimeField(blank=True, null=True)),
-                ("date_session", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="panic_alerts", to="safety.datesession")),
-                ("user", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="panic_alerts", to=settings.AUTH_USER_MODEL)),
+                ("date_session", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="panic_alerts", to="safety.datesession")),
+                ("user", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="panic_alerts", to=settings.AUTH_USER_MODEL)),
             ],
             options={
                 "indexes": [models.Index(fields=["user", "status", "triggered_at"], name="safety_panic_user_id_9c8dfc_idx")],
@@ -73,8 +74,8 @@ class Migration(migrations.Migration):
                 ("status", models.CharField(choices=[("unread", "Unread"), ("acknowledged", "Acknowledged")], default="unread", max_length=16)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("acknowledged_at", models.DateTimeField(blank=True, null=True)),
-                ("alert", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="recipients", to="safety.panicalert")),
-                ("recipient_user", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="received_safety_alerts", to=settings.AUTH_USER_MODEL)),
+                ("alert", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="recipients", to="safety.panicalert")),
+                ("recipient_user", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="received_safety_alerts", to=settings.AUTH_USER_MODEL)),
             ],
             options={
                 "indexes": [models.Index(fields=["recipient_user", "status", "created_at"], name="safety_safet_recipien_2d6c10_idx")],

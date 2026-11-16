@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+import django.db.models.deletion
 from django.db import migrations, models
 
 
@@ -19,7 +20,7 @@ class Migration(migrations.Migration):
                 ("provider_reference_hash", models.CharField(blank=True, max_length=64)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
-                ("user", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="verification_attempts", to=settings.AUTH_USER_MODEL)),
+                ("user", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="verification_attempts", to=settings.AUTH_USER_MODEL)),
             ],
         ),
     ]

@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+import django.db.models.deletion
 from django.db import migrations, models
 
 
@@ -21,7 +22,7 @@ class Migration(migrations.Migration):
                 ("score", models.FloatField()),
                 ("status", models.CharField(default="queued", max_length=16)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
-                ("subject_user", models.ForeignKey(on_delete=models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+                ("subject_user", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
             ],
         ),
         migrations.CreateModel(
@@ -33,8 +34,8 @@ class Migration(migrations.Migration):
                 ("status", models.CharField(choices=[("open", "Open"), ("review", "Review"), ("resolved", "Resolved")], default="open", max_length=16)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
-                ("reported", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="reports_received", to=settings.AUTH_USER_MODEL)),
-                ("reporter", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="reports_made", to=settings.AUTH_USER_MODEL)),
+                ("reported", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="reports_received", to=settings.AUTH_USER_MODEL)),
+                ("reporter", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="reports_made", to=settings.AUTH_USER_MODEL)),
             ],
             options={
                 "indexes": [models.Index(fields=["reported", "reason", "status"], name="safety_rep_reported_eea4c6_idx")],

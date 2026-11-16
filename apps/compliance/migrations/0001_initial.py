@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+import django.db.models.deletion
 from django.db import migrations, models
 
 
@@ -31,7 +32,7 @@ class Migration(migrations.Migration):
                 ("granted", models.BooleanField()),
                 ("granted_at", models.DateTimeField(auto_now_add=True)),
                 ("revoked_at", models.DateTimeField(blank=True, null=True)),
-                ("user", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="consents", to=settings.AUTH_USER_MODEL)),
+                ("user", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="consents", to=settings.AUTH_USER_MODEL)),
             ],
             options={"indexes": [models.Index(fields=["user", "consent_type", "granted_at"], name="compliance_c_user_id_8b4cc5_idx")]},
         ),
@@ -45,7 +46,7 @@ class Migration(migrations.Migration):
                 ("due_at", models.DateTimeField(blank=True, null=True)),
                 ("completed_at", models.DateTimeField(blank=True, null=True)),
                 ("completion_proof", models.JSONField(blank=True, default=dict)),
-                ("user", models.ForeignKey(null=True, on_delete=models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL)),
+                ("user", models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL)),
             ],
         ),
     ]
