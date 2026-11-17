@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.12-slim-trixie AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -18,14 +18,14 @@ RUN python -m pip install --upgrade pip \
     && python -m pip wheel --no-cache-dir --wheel-dir /wheels .
 
 
-FROM python:3.12-slim-bookworm AS runtime
+FROM python:3.12-slim-trixie AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y gdal-bin libgdal-dev libpq5 ffmpeg libglib2.0-0 \
+    && apt-get install --no-install-recommends -y gdal-bin libgdal-dev libpq5 ffmpeg libglib2.0-0t64 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --shell /usr/sbin/nologin anonymoke
 
@@ -35,6 +35,12 @@ RUN python -m pip install --no-cache-dir /wheels/*.whl \
     && rm -rf /wheels
 
 COPY --chown=anonymoke:anonymoke . .
+
+# Check native GIS support and migration parity before this image can be deployed.
+RUN python -c "import sys; from django.contrib.gis.gdal import GDAL_VERSION; print('GDAL version:', GDAL_VERSION); sys.exit(0 if GDAL_VERSION >= (3, 9) else 'GDAL >= 3.9 is required')"
+RUN DJANGO_SETTINGS_MODULE=config.settings.dev DATABASE_URL=sqlite://:memory: \
+    python manage.py makemigrations --check --dry-run --noinput
+
 USER anonymoke
 
 EXPOSE 8000

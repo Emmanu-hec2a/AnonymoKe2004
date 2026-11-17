@@ -59,6 +59,32 @@ image and release version as the API service.
 The API image also serves WebSockets through Daphne at `/ws/v1/matches/{match_id}/?token=<access-jwt>`.
 Keep the access token short-lived and use the normal refresh endpoint before reconnecting after expiry.
 
+## Migration consistency and GDAL
+
+The Docker builder and runtime use Python 3.12 on Debian Trixie, whose GDAL
+packages provide 3.10. The image checks that Django loads GDAL 3.9 or newer.
+This satisfies the native-library requirement behind Django's `gis.W001` check;
+no system-check warning is suppressed.
+
+The image also runs `makemigrations --check --dry-run --noinput` during the build.
+That check uses development settings and an isolated in-memory SQLite connection
+only to compare model and migration state. It never connects to the Railway
+production database, generates migration files, or changes the runtime database
+configuration. Deployment still applies committed migrations through the existing
+`migrate --noinput` pre-deploy command.
+
+The `align_model_state` migrations reconcile existing index names, serialize the
+custom User manager, and align the payment-callback JSON field's validation metadata.
+They preserve existing records. The Profile migration depends on
+`0003_profile_media_controls`, which already depends on `0003_mediaasset`.
+
+When changing models, generate and review migrations in development, commit them
+with the model change, then deploy. Avoid generating migration files at container
+startup because they would be release-specific and ephemeral.
+
+References: [Django GDAL security requirement](https://docs.djangoproject.com/en/5.2/releases/5.2.19/),
+[Debian Trixie GDAL](https://packages.debian.org/trixie/gdal-bin).
+
 ## First deployment sequence
 
 1. Provision PostGIS PostgreSQL and Redis.
