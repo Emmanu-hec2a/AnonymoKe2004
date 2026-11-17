@@ -65,6 +65,15 @@ References:
 - [Google BIMI setup](https://knowledge.workspace.google.com/admin/security/set-up-bimi)
 - [Resend authentication-message tracking guidance](https://resend.com/guides/email/deliverability/avoid-outlook-spam-folder)
 
+## Resend transport diagnostics
+
+The backend identifies itself with the `AnonymoKE/1.0` User-Agent. The generic
+Python urllib User-Agent was rejected by Resend's edge with HTTP 403/code 1010,
+while the application User-Agent could read the verified sending domain.
+Failed sends log only HTTP status or exception class; recipient addresses,
+magic-link tokens, request bodies and API keys are excluded from these diagnostics.
+The public auth endpoint retains its generic delivery-unavailable response.
+
 ## Verification
 
 `python -B -m unittest apps.accounts.test_mail_unit -v` renders the actual

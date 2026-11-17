@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 from django.template import Context, Engine
 
@@ -84,6 +84,10 @@ class BrandedMagicLinkEmailTests(TestCase):
         self.assertEqual(request.full_url, "https://api.resend.com/emails")
         self.assertEqual(request.get_method(), "POST")
         self.assertEqual(request.get_header("Authorization"), "Bearer test-resend-key")
+        self.assertEqual(
+            request.get_header("User-agent"), "AnonymoKE/1.0 (+https://anonymoke.co.ke)"
+        )
+        self.assertEqual(request.get_header("Accept"), "application/json")
         self.assertEqual(self.urlopen.call_args.kwargs["timeout"], 10)
 
     def test_expiry_matches_the_server_configuration_in_both_versions(self):
@@ -157,3 +161,27 @@ class BrandedMagicLinkEmailTests(TestCase):
         self.urlopen.side_effect = URLError("offline")
         with self.assertRaises(URLError):
             self.send()
+
+    def test_rejected_delivery_logs_status_without_recipient_or_token_details(self):
+        self.urlopen.side_effect = HTTPError(
+            "https://api.resend.com/emails",
+            403,
+            "person@example.test test-token test-resend-key",
+            {},
+            None,
+        )
+        with self.assertLogs("anonymoke.accounts.email", level="WARNING") as captured:
+            with self.assertRaises(HTTPError):
+                self.send()
+        output = " ".join(captured.output)
+        self.assertIn("http_status=403", output)
+        for private in ("person@example.test", "test-token", "test-resend-key"):
+            self.assertNotIn(private, output)
+
+    def test_provider_success_requires_a_nonempty_message_id(self):
+        for body in (b"{}", b'{"id": ""}', b'{"id": null}', b"[]"):
+            with self.subTest(body=body):
+                self.urlopen.return_value.__enter__.return_value.read.return_value = body
+                with self.assertLogs("anonymoke.accounts.email", level="WARNING"):
+                    with self.assertRaisesRegex(ValueError, "resend_invalid_response"):
+                        self.send()

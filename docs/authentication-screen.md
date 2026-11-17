@@ -106,6 +106,37 @@ signing fingerprints still need registration in the same Google Cloud project.
 This native ID-token flow does not consume a Google client secret or use a web
 OAuth redirect endpoint.
 
+## Android account chooser returns without signing in
+
+The native Google SDK can report Android OAuth configuration failures using the
+same cancellation code as an intentional dismissal. Google sign-in now displays
+`Google sign-in was not completed. Try again or use email.` for this ambiguous
+result, resets the loading state and allows another attempt. Apple cancellation
+keeps its existing behavior. Two regression checks cover the mapping and a
+successful retry; all 36 targeted Flutter auth tests pass.
+
+Register the fingerprint of the APK's actual signing certificate, rather than
+assuming a certificate inspected with keytool is the one Gradle used. The current
+Android release configuration still uses the debug signing configuration. Build
+13 was checked directly and has these fingerprints:
+
+```text
+SHA-1:   63:B4:D6:24:14:D6:30:80:00:67:E4:86:F7:F9:0E:10:68:FB:8A:B9
+SHA-256: D6:D8:9F:61:38:46:F1:78:2B:81:78:3D:6D:C7:80:68:5B:64:1B:76:7C:DF:70:25:13:CA:AF:48:94:0F:E6:5F
+```
+
+In Firebase project settings, add the appropriate fingerprints to Android app
+`co.anonymoke.anonymoke`, then download the newly generated google-services.json
+to `android/app/google-services.json`. Preserve registrations for other active
+signing certificates. When a dedicated release or Play signing certificate is
+introduced, register that certificate as well. Do not fabricate an Android OAuth
+client registration by editing the JSON's certificate hash manually.
+
+The Django Google audience must still be the Web/server client ID shown above;
+the native Android client ID is not the ID-token audience for this flow.
+[Flutter Android sign-in troubleshooting](https://pub.dev/packages/google_sign_in_android)
+describes the cancellation/configuration ambiguity and required registration.
+
 ## Backend guarantees
 
 Unconfigured email delivery returns `email_delivery_unavailable`, rather than

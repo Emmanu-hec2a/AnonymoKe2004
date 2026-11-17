@@ -1,12 +1,16 @@
 import base64
 import json
+import logging
 from datetime import UTC, datetime
 from importlib.resources import files
 from urllib import request
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 
 from django.conf import settings
 from django.template.loader import render_to_string
+
+logger = logging.getLogger("anonymoke.accounts.email")
 
 
 class EmailDeliveryProvider:
@@ -50,9 +54,26 @@ class ResendEmailAdapter(EmailDeliveryProvider):
             headers={
                 "Authorization": f"Bearer {settings.RESEND_API_KEY}",
                 "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "AnonymoKE/1.0 (+https://anonymoke.co.ke)",
             },
             method="POST",
         )
-        with request.urlopen(req, timeout=10) as response:  # noqa: S310 - fixed HTTPS Resend endpoint
-            payload = json.loads(response.read())
-        return str(payload["id"])
+        try:
+            with request.urlopen(req, timeout=10) as response:  # noqa: S310 - fixed HTTPS Resend endpoint
+                payload = json.loads(response.read())
+            message_id = payload.get("id") if isinstance(payload, dict) else None
+            if not isinstance(message_id, str) or not message_id.strip():
+                raise ValueError("resend_invalid_response")
+            return message_id
+        except HTTPError as error:
+            logger.warning("Resend rejected sign-in email (http_status=%s).", error.code)
+            raise
+        except (URLError, TimeoutError) as error:
+            logger.warning("Resend connection failed (error_type=%s).", type(error).__name__)
+            raise
+        except (ValueError, KeyError, TypeError) as error:
+            logger.warning(
+                "Resend returned an invalid response (error_type=%s).", type(error).__name__
+            )
+            raise
