@@ -111,7 +111,24 @@ RESEND_REPLY_TO_EMAIL = env("RESEND_REPLY_TO_EMAIL", default="")
 EMAIL_PRIVACY_URL = env("EMAIL_PRIVACY_URL", default="")
 EMAIL_TERMS_URL = env("EMAIL_TERMS_URL", default="")
 RESEND_API_KEY = env("RESEND_API_KEY", default="")
-MAGIC_LINK_BASE_URL = env("MAGIC_LINK_BASE_URL", default="anonymoke://auth/magic-link?token=")
+MAGIC_LINK_BASE_URL = env(
+    "MAGIC_LINK_BASE_URL", default="https://api.anonymoke.co.ke/auth/magic-link#token="
+)
+# Public certificates for the currently registered Android signing configurations.
+# Override this list when introducing a release/Play signing certificate.
+ANDROID_APP_LINK_SHA256_FINGERPRINTS = env.list(
+    "ANDROID_APP_LINK_SHA256_FINGERPRINTS",
+    default=[
+        (
+            "86:8D:B1:46:27:F4:4F:94:AD:B2:61:95:5E:5A:2B:41:"
+            "F2:83:7F:73:90:A0:EE:A4:FA:57:FF:BE:E9:90:01:6B"
+        ),
+        (
+            "D6:D8:9F:61:38:46:F1:78:2B:81:78:3D:6D:C7:80:68:"
+            "5B:64:1B:76:7C:DF:70:25:13:CA:AF:48:94:0F:E6:5F"
+        ),
+    ],
+)
 GOOGLE_OIDC_CLIENT_ID = env("GOOGLE_OIDC_CLIENT_ID", default="")
 GOOGLE_OIDC_ISSUER = env("GOOGLE_OIDC_ISSUER", default="https://accounts.google.com")
 GOOGLE_OIDC_JWKS_URL = env(

@@ -1,6 +1,11 @@
 from django.urls import include, path
 
+from apps.accounts.link_handoff import android_asset_links, magic_link_landing
+
 urlpatterns = [
+    path("auth/magic-link", magic_link_landing, name="magic-link-landing"),
+    path("auth/magic-link/", magic_link_landing),
+    path(".well-known/assetlinks.json", android_asset_links, name="android-asset-links"),
     path("", include("apps.core.urls")),
     path("api/v1/auth/", include("apps.accounts.urls")),
     path("api/v1/me/verification/", include("apps.verification.urls")),

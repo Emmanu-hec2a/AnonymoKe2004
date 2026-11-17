@@ -45,26 +45,71 @@ as the client's backwards-compatible defaults. Accepted requests do not claim
 delivery or disclose whether an account exists. Cooldown/hourly suppression
 still returns the same accepted response.
 
-The configured custom URL `anonymoke://auth/magic-link?token=...` is registered
-on Android and iOS. `app_links` handles initial and subsequent links, and
-Flutter's competing deep-link handler is disabled. The parser accepts only the
-expected host/path, one token, its bounded URL-safe format and no fragment,
-userinfo or explicit port. Initial/stream duplicates are ignored. Tokens remain
-in memory and do not enter the internal router URL or token-paste fields.
+Sign-in emails now use an ordinary HTTPS URL:
 
-A valid link signs in automatically when signed out. An existing signed-in
-account requires confirmation before using another link. Expired/reused links
-offer recovery; transient failures allow retry. No link is redeemed by the
-backend's email request endpoint.
+```env
+MAGIC_LINK_BASE_URL=https://api.anonymoke.co.ke/auth/magic-link#token=
+```
 
-The existing custom scheme supports device/staging testing. Before public
-launch, configure an owned HTTPS auth domain, Android verified App Links and
-iOS Universal Links. `AUTH_LINK_HOST` restricts the Dart parser to that hostname
-and `/auth/magic-link`; it does not publish association files or configure OS
-domain entitlements by itself. Publish the domain's `assetlinks.json` and
-`apple-app-site-association`, add the corresponding native HTTPS intent/domain
-configuration, and set `MAGIC_LINK_BASE_URL` to that HTTPS URL. Test delivery and
-handoff with the actual email clients on physical devices.
+The token is in the URL fragment so it is not sent in HTTP requests, proxy access
+logs or referrers. The email's primary button and fallback text link use the same
+URL. Request a fresh email after deployment: existing emails retain their old
+custom-scheme links, which some email clients suppress.
+
+Android's manifest registers the owned `api.anonymoke.co.ke` domain with
+`android:autoVerify`, restricted to `/auth/magic-link` and `/auth/magic-link/`.
+The backend publishes `/.well-known/assetlinks.json` as JSON without a redirect,
+for package `co.anonymoke.anonymoke` and both supplied SHA-256 certificates.
+`ANDROID_APP_LINK_SHA256_FINGERPRINTS` optionally overrides the comma-separated
+public certificate list. Register the actual release/Play signing certificate
+when introducing a new signing configuration, and retire obsolete certificates.
+
+A new APK is required for Android to acquire the new HTTPS intent filter. The
+existing APK can still use the browser handoff: the HTTPS page shows an explicit
+**Open AnonymoKE** action using the registered custom callback. Android's action
+targets the package with an `intent://` URL; iOS uses the existing custom scheme.
+Browsers that suppress external app navigation may require opening the page in
+the default browser. No store/download link is invented before public release.
+iOS Universal Links remain pending Apple App ID/team/domain provisioning; this
+change does not claim native iOS HTTPS association is configured.
+
+The landing page requires a deliberate tap, never calls the verification API,
+and does not consume links on GET/HEAD, so mail scanners cannot redeem a token by
+visiting it. It clears the token from browser history, uses a per-response CSP
+nonce, disables caching/referrers/framing and loads no third-party resources.
+Malformed or ambiguous token parameters show a recovery message without an app
+launch. Keep Resend open/click tracking disabled for authentication messages so
+the provider does not wrap the associated URL.
+
+The app parser defaults `AUTH_LINK_HOST` to the owned API domain. It accepts one
+bounded URL-safe token in the HTTPS fragment, plus legacy HTTPS-query and custom
+callback forms. It rejects mixed query/fragment credentials, duplicate tokens,
+extra fields, untrusted origins, userinfo and non-default explicit ports.
+Initial/stream duplicates across URL forms are ignored. Tokens remain in memory
+and never enter the internal router URL or token-paste fields. A custom
+`AUTH_LINK_HOST` still requires matching native and hosted domain association.
+
+A valid link signs in when signed out. An existing signed-in account requires
+confirmation before using another link. Expired/reused links offer recovery;
+transient failures allow retry. No token is redeemed by the email request or
+public landing endpoints.
+
+For physical-device verification, install the new APK and tap a fresh email.
+Inspect domain verification on Android with:
+
+```cmd
+adb shell pm verify-app-links --re-verify co.anonymoke.anonymoke
+adb shell pm get-app-links co.anonymoke.anonymoke
+```
+
+The API host should show `verified`. User-selected default-link settings and
+email in-app browsers can affect the final handoff. Test both cold and running
+app states. Do not put a real sign-in token into terminal commands or logs.
+
+References: [Android App Links](https://developer.android.com/training/app-links/add-applinks),
+[Android verification](https://developer.android.com/training/app-links/verify-applinks),
+[Flutter app-link setup](https://docs.flutter.dev/cookbook/navigation/set-up-app-links),
+[Chrome Android intents](https://developer.chrome.com/docs/android/intents).
 
 ## Branded sign-in email
 
@@ -155,21 +200,25 @@ subject constraint without failing a second legitimate request.
 
 ## Verification
 
-The full Flutter suite passes all 244 tests and static analysis is clean.
-All 34 auth checks also pass in Demo mode. The Android auth and check-email
-screens were rendered and visually inspected; the temporary rendering helper
-was removed, and previews remain under the client's `build/ui_previews` folder.
-34 new auth tests cover API/session behavior, link parsing and handoff, provider
-cancellation, retry/cooldown, account switching, storage failure, logout races,
-Demo visibility and keyboard/larger-text layouts. Nine isolated backend token
-validation tests pass. Backend lint, syntax, OpenAPI and platform XML/plist checks
-pass. Eight API integration tests were added; local Django startup stops before
-tests because GDAL is unavailable. Run these in the PostGIS/GDAL CI environment.
+The latest HTTPS handoff change passes 40 targeted Flutter authentication tests,
+18 isolated backend email/handoff tests and 13 JavaScript handoff behavior cases.
+Dart analysis, backend lint and Android manifest validation pass. A real headless
+browser verified 390px and 320px viewports, visible Android app actions, removal
+of the token from browser history and no horizontal overflow. No APK was built.
 
-Native OAuth dialogs, platform callback registration, release signing, real
-Resend delivery and cold/warm/background device handoff still need configured
-credentials and physical-device validation. This implementation does not claim
-those external integrations have already been exercised.
+The checks cover trusted origins, fragment/query ambiguity, duplicate delivery,
+JWT/session routing, secure storage/logout races, malformed link recovery,
+scanner-safe public GET/HEAD responses, nonce CSP, certificate association and
+real HTML/plain-text email rendering with mocked delivery. Database/GIS auth
+integration tests were not rerun locally because native GDAL is unavailable;
+Railway's image retains its native GIS and migration-parity build checks.
+
+Resend's verified sending domain was checked read-only, with open and click
+tracking confirmed disabled. No live test email or valid sign-in token was
+created by these checks. Final cold/warm app handoff must be confirmed on the
+physical device with a fresh email after deployment. New Android HTTPS handling
+requires a rebuilt APK and successful OS domain verification; existing APKs use
+the browser handoff. iOS Universal Link provisioning remains separate.
 
 Implementation references: [Google Sign-In](https://pub.dev/packages/google_sign_in),
 [Apple Sign-In](https://pub.dev/packages/sign_in_with_apple),

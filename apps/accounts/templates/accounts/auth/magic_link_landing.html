@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" data-android-package="{{ android_package }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="color-scheme" content="dark">
+  <title>Open AnonymoKE</title>
+  <style nonce="{{ nonce }}">
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; min-height: 100svh; display: grid; place-items: center; padding: 32px 20px; background: #0F1115; color: #F2F4F8; font: 16px/1.6 system-ui, -apple-system, sans-serif; }
+    main { width: 100%; max-width: 420px; }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; font-size: 22px; font-weight: 750; letter-spacing: -.5px; }
+    .brand img { width: 72px; height: 48px; object-fit: contain; border-radius: 10px; }
+    .card { position: relative; overflow: hidden; padding: 30px 26px; background: #171A21; border: 1px solid #262B38; border-radius: 22px; }
+    .card::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; background: linear-gradient(90deg, #6A4AF0, #FF6B81); }
+    .eyebrow { margin: 0 0 12px; color: #9D86FF; font-size: 12px; font-weight: 750; letter-spacing: 1.4px; }
+    h1 { margin: 0 0 14px; font-size: clamp(26px, 7vw, 32px); line-height: 1.18; letter-spacing: -.9px; }
+    p { margin: 0 0 22px; color: #B4BBC8; }
+    .button { display: block; width: 100%; padding: 16px 18px; border: 1px solid #6A4AF0; border-radius: 13px; background: #6A4AF0; color: white; text-align: center; text-decoration: none; font-weight: 700; }
+    .button:focus-visible { outline: 3px solid #9D86FF; outline-offset: 4px; }
+    .expiry { margin: 16px 0 0; color: #2EC4B6; font-size: 13px; }
+    .help { margin: 18px 0 0; color: #9AA3B2; font-size: 13px; }
+    footer { margin-top: 24px; color: #9AA3B2; text-align: center; font-size: 12px; }
+    [hidden] { display: none !important; }
+    noscript p { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand"><img alt="AK eye and heart logo" src="data:image/jpeg;base64,{{ logo_data }}"><span>AnonymoKE</span></div>
+    <section class="card" aria-labelledby="heading">
+      <p class="eyebrow">PRIVATE BY CHOICE</p>
+      <h1 id="heading">Continue in AnonymoKE.</h1>
+      <p id="message" role="status" aria-live="polite">Open the app to finish signing in securely.</p>
+      <a id="open-app" class="button" rel="noreferrer" hidden>Open AnonymoKE</a>
+      <p class="expiry">Your email link expires in {{ ttl_minutes }} minute{{ ttl_minutes|pluralize }} and works once.</p>
+      <p id="help" class="help">If the app does not open, use your email browser's menu to open this page in your default browser, then tap again.</p>
+      <noscript><p>JavaScript is needed to open the app from this page. Enable it in your browser and reopen the link from your email.</p></noscript>
+    </section>
+    <footer>Only use a sign-in link you requested. Never forward it.</footer>
+  </main>
+  <script nonce="{{ nonce }}">
+    (() => {
+      const url = new URL(window.location.href);
+      const hasFragment = url.href.includes('#');
+      const hasQuery = url.href.split('#')[0].includes('?');
+      const params = hasFragment
+        ? new URLSearchParams(url.hash.slice(1))
+        : url.searchParams;
+      const entries = Array.from(params.entries());
+      const token = entries.length === 1 && entries[0][0] === 'token'
+        ? entries[0][1] : null;
+      // New links use a fragment: it never reaches Railway/Django access logs.
+      // Remove either supported token form from browser history before handoff.
+      window.history.replaceState(null, '', url.pathname);
+      const valid = !(hasFragment && hasQuery)
+        && token !== null && /^[A-Za-z0-9_-]{20,200}$/.test(token);
+      const button = document.getElementById('open-app');
+      if (!valid) {
+        document.getElementById('heading').textContent = 'Request a fresh link.';
+        document.getElementById('message').textContent = 'This sign-in link is incomplete. Return to AnonymoKE and request a new email.';
+        document.getElementById('help').textContent = 'Use the complete link in your latest sign-in email.';
+        return;
+      }
+      const encoded = encodeURIComponent(token);
+      const android = /Android/i.test(window.navigator.userAgent);
+      const androidPackage = document.documentElement.dataset.androidPackage;
+      button.href = android
+        ? `intent://auth/magic-link?token=${encoded}#Intent;scheme=anonymoke;package=${androidPackage};end`
+        : `anonymoke://auth/magic-link?token=${encoded}`;
+      button.hidden = false;
+      // Navigation requires a real tap. Visiting/scanning this page never
+      // calls the verification endpoint or consumes a one-time token.
+    })();
+  </script>
+</body>
+</html>

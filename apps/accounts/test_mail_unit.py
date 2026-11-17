@@ -18,7 +18,7 @@ MAIL_SETTINGS = {
     "RESEND_API_KEY": "test-resend-key",
     "RESEND_FROM_EMAIL": "AnonymoKE <noreply@anonymoke.co.ke>",
     "RESEND_REPLY_TO_EMAIL": "",
-    "MAGIC_LINK_BASE_URL": "anonymoke://auth/magic-link?token=",
+    "MAGIC_LINK_BASE_URL": "https://api.anonymoke.co.ke/auth/magic-link#token=",
     "MAGIC_LINK_TTL_MINUTES": 10,
     "EMAIL_PRIVACY_URL": "",
     "EMAIL_TERMS_URL": "",
@@ -70,7 +70,7 @@ class BrandedMagicLinkEmailTests(TestCase):
         self.assertEqual(message["from"], MAIL_SETTINGS["RESEND_FROM_EMAIL"])
         self.assertEqual(message["to"], ["person@example.test"])
         self.assertEqual(message["subject"], "Your AnonymoKE sign-in link")
-        sign_in = "anonymoke://auth/magic-link?token=test-token"
+        sign_in = "https://api.anonymoke.co.ke/auth/magic-link#token=test-token"
         self.assertEqual(EmailLinks(message["html"]).links.count(sign_in), 2)
         self.assertIn(sign_in, message["text"])
         for body in (message["html"], message["text"]):
@@ -131,8 +131,8 @@ class BrandedMagicLinkEmailTests(TestCase):
         self.assertEqual(
             EmailLinks(message["html"]).links,
             [
-                "anonymoke://auth/magic-link?token=test-token",
-                "anonymoke://auth/magic-link?token=test-token",
+                "https://api.anonymoke.co.ke/auth/magic-link#token=test-token",
+                "https://api.anonymoke.co.ke/auth/magic-link#token=test-token",
                 "https://anonymoke.co.ke",
             ],
         )
@@ -185,3 +185,10 @@ class BrandedMagicLinkEmailTests(TestCase):
                 with self.assertLogs("anonymoke.accounts.email", level="WARNING"):
                     with self.assertRaisesRegex(ValueError, "resend_invalid_response"):
                         self.send()
+
+    def test_legacy_custom_scheme_can_still_be_explicitly_configured(self):
+        self.config.MAGIC_LINK_BASE_URL = "anonymoke://auth/magic-link?token="
+        _, message = self.send()
+        link = "anonymoke://auth/magic-link?token=test-token"
+        self.assertEqual(EmailLinks(message["html"]).links.count(link), 2)
+        self.assertIn(link, message["text"])

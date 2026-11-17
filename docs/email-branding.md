@@ -74,6 +74,15 @@ Failed sends log only HTTP status or exception class; recipient addresses,
 magic-link tokens, request bodies and API keys are excluded from these diagnostics.
 The public auth endpoint retains its generic delivery-unavailable response.
 
+## Clickable sign-in handoff
+
+The production email button and fallback text use an HTTPS app link rather than
+a custom scheme, which email clients may strip or ignore. The owned API domain
+serves a scanner-safe browser handoff for older installs and Android certificate
+association for new builds. Tokens use URL fragments. See
+[authentication-screen.md](authentication-screen.md#email-handoff) for deployment
+settings and device checks. Old emails require a fresh request after the change.
+
 ## Verification
 
 `python -B -m unittest apps.accounts.test_mail_unit -v` renders the actual
