@@ -23,6 +23,9 @@ from .tasks_media import process_media_asset, recover_media_processing, refresh_
 
 class ProfileIntegrationTests(TestCase):
     def setUp(self):
+        self.enterContext(
+            patch("apps.profiles.tasks_media.avatar_thumbnail", return_value=b"thumbnail")
+        )
         cache.clear()
         self.user = User.objects.create_user(email="profile@example.test")
         self.profile = Profile.objects.create(
@@ -654,7 +657,9 @@ class ProfileIntegrationTests(TestCase):
             PrivateIdentity.objects.get(user=self.user).real_avatar_key,
             f"media/original/{asset.pk}.jpg",
         )
-        store.return_value.upload_private.assert_called_once()
+        self.assertEqual(store.return_value.upload_private.call_count, 2)
+        asset.refresh_from_db()
+        self.assertEqual(asset.thumbnail_key, f"media/thumbnails/{asset.pk}.jpg")
         store.return_value.upload_derived.assert_called_once()
 
     @patch("apps.profiles.tasks_media.R2MediaStore")
@@ -758,7 +763,9 @@ class ProfileIntegrationTests(TestCase):
             PrivateIdentity.objects.get(user=self.user).real_avatar_key, "private-photo.jpg"
         )
         self.assertEqual(self.profile.blurred_avatar_key, "blurred-photo.jpg")
-        store.return_value.upload_private.assert_not_called()
+        store.return_value.upload_private.assert_called_once_with(
+            asset.thumbnail_key, b"thumbnail", "image/jpeg"
+        )
         store.return_value.upload_derived.assert_called_once_with(
             "blurred-photo.jpg", b"softer-blur", "image/jpeg"
         )
@@ -781,6 +788,26 @@ class ProfileIntegrationTests(TestCase):
         store.return_value.download.side_effect = deactivate
         self.assertEqual(refresh_avatar_preview(str(asset.pk)), "removed")
         store.return_value.upload_derived.assert_not_called()
+
+    @patch("apps.profiles.serializers.R2MediaStore")
+    def test_header_thumbnail_is_owner_scoped_and_presigned_privately(self, store):
+        asset = self.ready_photo()
+        asset.thumbnail_key = "media/thumbnails/header.jpg"
+        asset.save(update_fields=["thumbnail_key"])
+        store.return_value.presign_private.side_effect = lambda key: "private:" + key
+        response = self.client.get(self.base + "profile/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["avatar_thumbnail_url"], "private:media/thumbnails/header.jpg"
+        )
+        other = User.objects.create_user(email="thumbnail-other@example.test")
+        Profile.objects.create(user=other)
+        self.client.force_authenticate(other)
+        self.assertIsNone(self.client.get(self.base + "profile/").data["avatar_thumbnail_url"])
+
+    def test_erasure_includes_thumbnails_even_after_a_partial_refresh_failure(self):
+        asset = self.ready_photo()
+        self.assertIn(f"media/thumbnails/{asset.pk}.jpg", _media_keys_for_user(self.user))
 
     @patch("apps.profiles.tasks_media.process_avatar", return_value=(b"private", b"preview"))
     @patch("apps.profiles.tasks_media.R2MediaStore")

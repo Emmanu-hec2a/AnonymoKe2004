@@ -53,6 +53,15 @@ def process_avatar(asset: MediaAsset, payload: bytes) -> tuple[bytes, bytes]:
     return original.getvalue(), derived.getvalue()
 
 
+def avatar_thumbnail(original: bytes) -> bytes:
+    """Small private header image, derived only from a validated original."""
+    with Image.open(BytesIO(original)) as source:
+        thumbnail = ImageOps.fit(source.convert("RGB"), (256, 256), Image.Resampling.LANCZOS)
+        output = BytesIO()
+        thumbnail.save(output, format="JPEG", quality=82, optimize=True, exif=b"")
+        return output.getvalue()
+
+
 def _find_one_face(image: Image.Image) -> tuple[int, int, int, int]:
     try:
         import cv2
@@ -137,7 +146,9 @@ def process_audio(asset: MediaAsset, payload: bytes) -> tuple[bytes, int]:
             "-c:a",
             "aac",
             "-b:a",
-            "96k",
+            "64k",
+            "-movflags",
+            "+faststart",
             "-t",
             str(min(15000, settings.MEDIA_AUDIO_MAX_DURATION_MS) / 1000),
             str(output),

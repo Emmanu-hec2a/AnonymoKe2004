@@ -13,7 +13,13 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 if not settings.configured and not os.getenv("DJANGO_SETTINGS_MODULE"):
     settings.configure(SECRET_KEY="unit-tests", USE_TZ=True)
 
-from .media import MediaRejected, _audio_duration_ms, process_audio, process_avatar  # noqa: E402
+from .media import (
+    MediaRejected,
+    _audio_duration_ms,
+    avatar_thumbnail,
+    process_audio,
+    process_avatar,
+)  # noqa: E402
 from .storage import MediaPayloadTooLarge, R2MediaStore  # noqa: E402
 
 
@@ -68,6 +74,14 @@ class AvatarPrivacyTests(TestCase):
     def test_corrupt_image_is_rejected(self):
         with self.assertRaisesRegex(MediaRejected, "avatar_invalid"):
             process_avatar(SimpleNamespace(), b"not-an-image")
+
+    def test_private_header_thumbnail_is_small_square_and_strips_metadata(self):
+        original, _ = process_avatar(SimpleNamespace(), self.photo())
+        payload = avatar_thumbnail(original)
+        thumbnail = Image.open(BytesIO(payload))
+        self.assertEqual(thumbnail.size, (256, 256))
+        self.assertFalse(thumbnail.getexif())
+        self.assertLess(len(payload), 20000)
 
     @override_settings(MEDIA_AVATAR_MAX_BYTES=100)
     def test_oversized_upload_is_rejected_before_decoding(self):
@@ -187,6 +201,8 @@ class AudioPrivacyTests(TestCase):
             self.assertEqual(self.command[self.command.index(option) + 1], "-1")
         self.assertEqual(self.command[self.command.index("-protocol_whitelist") + 1], "file")
         self.assertEqual(self.command[self.command.index("-format_whitelist") + 1], "mov,mp3,wav")
+        self.assertEqual(self.command[self.command.index("-b:a") + 1], "64k")
+        self.assertEqual(self.command[self.command.index("-movflags") + 1], "+faststart")
 
     @patch("apps.profiles.media._audio_duration_ms", return_value=12000)
     def test_disguise_opt_out_keeps_pitch_unchanged_but_still_sanitizes_audio(self, probe):

@@ -91,6 +91,7 @@ class MediaAsset(models.Model):
     incoming_key = models.CharField(max_length=255, unique=True)
     original_key = models.CharField(max_length=255, blank=True)
     derived_key = models.CharField(max_length=255, blank=True)
+    thumbnail_key = models.CharField(max_length=255, blank=True)
     size_bytes = models.PositiveIntegerField(default=0)
     duration_ms = models.PositiveIntegerField(null=True, blank=True)
     rejection_code = models.CharField(max_length=64, blank=True)

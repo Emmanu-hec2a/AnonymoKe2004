@@ -39,6 +39,7 @@ class ProfileSerializer(serializers.ModelSerializer):
         max_length=3,
     )
     avatar_url = serializers.SerializerMethodField()
+    avatar_thumbnail_url = serializers.SerializerMethodField()
     has_avatar = serializers.SerializerMethodField()
     blurred_avatar_url = serializers.SerializerMethodField()
     audio_url = serializers.SerializerMethodField()
@@ -65,6 +66,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "verification_level",
             "target_genders",
             "avatar_url",
+            "avatar_thumbnail_url",
             "has_avatar",
             "blurred_avatar_url",
             "audio_url",
@@ -157,6 +159,23 @@ class ProfileSerializer(serializers.ModelSerializer):
     def get_has_avatar(self, obj):
         identity = getattr(obj.user, "private_identity", None)
         return bool(identity and identity.real_avatar_key)
+
+    def get_avatar_thumbnail_url(self, obj):
+        identity = getattr(obj.user, "private_identity", None)
+        if not identity or not identity.real_avatar_key:
+            return None
+        asset = (
+            MediaAsset.objects.filter(
+                user_id=obj.user_id,
+                kind="avatar",
+                status="ready",
+                original_key=identity.real_avatar_key,
+            )
+            .exclude(thumbnail_key="")
+            .only("thumbnail_key")
+            .first()
+        )
+        return self._url(asset.thumbnail_key, private=True) if asset else None
 
     def get_blurred_avatar_url(self, obj):
         return self._url(obj.blurred_avatar_key)

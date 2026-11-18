@@ -10,7 +10,7 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.compliance.consent import has_active_consent
 
-from .media import MediaRejected, process_audio, process_avatar
+from .media import MediaRejected, avatar_thumbnail, process_audio, process_avatar
 from .models import MediaAsset, PrivateIdentity, Profile
 from .storage import MediaPayloadTooLarge, R2MediaStore
 
@@ -39,9 +39,10 @@ def process_media_asset(asset_id: str) -> str:
             else f"media/audio/{asset.pk}.m4a"
         )
         derived_key = f"media/derived/{asset.pk}.jpg" if asset.kind == "avatar" else ""
+        thumbnail_key = f"media/thumbnails/{asset.pk}.jpg" if asset.kind == "avatar" else ""
         # Record every possible object before any upload, including partial failures.
         MediaAsset.objects.filter(pk=asset.pk, processing_queued_at=now).update(
-            original_key=original_key, derived_key=derived_key
+            original_key=original_key, derived_key=derived_key, thumbnail_key=thumbnail_key
         )
         store = R2MediaStore()
         try:
@@ -57,6 +58,7 @@ def process_media_asset(asset_id: str) -> str:
             raise MediaRejected("media_size_invalid") from exc
         if asset.kind == "avatar":
             original, derived = process_avatar(asset, payload)
+            thumbnail = avatar_thumbnail(original)
             original_key, derived_key = (
                 f"media/original/{asset.pk}.jpg",
                 f"media/derived/{asset.pk}.jpg",
@@ -89,6 +91,7 @@ def process_media_asset(asset_id: str) -> str:
             )
             if derived_key:
                 store.upload_derived(derived_key, derived, "image/jpeg")
+                store.upload_private(thumbnail_key, thumbnail, "image/jpeg")
             newer = MediaAsset.objects.filter(
                 user=user, kind=asset.kind, status="ready", created_at__gt=asset.created_at
             ).exists()
@@ -157,7 +160,8 @@ def refresh_avatar_preview(asset_id: str) -> str:
     try:
         store = R2MediaStore()
         payload = store.download(asset.original_key, max_bytes=settings.MEDIA_AVATAR_MAX_BYTES)
-        _, preview = process_avatar(asset, payload)
+        original, preview = process_avatar(asset, payload)
+        thumbnail = avatar_thumbnail(original)
         with transaction.atomic():
             user = (
                 User.objects.select_for_update().filter(pk=asset.user_id, status="active").first()
@@ -179,6 +183,9 @@ def refresh_avatar_preview(asset_id: str) -> str:
             if not all(has_active_consent(user, kind) for kind in ("privacy", "sensitive_data")):
                 return "consent_required"
             # Keep the tracked object key so erasure still covers this derivative.
+            current.thumbnail_key = f"media/thumbnails/{current.pk}.jpg"
+            current.save(update_fields=["thumbnail_key"])
+            store.upload_private(current.thumbnail_key, thumbnail, "image/jpeg")
             store.upload_derived(current.derived_key, preview, "image/jpeg")
         return "refreshed"
     except MediaRejected:

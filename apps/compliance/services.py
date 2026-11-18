@@ -50,9 +50,13 @@ def purge_user_data(
 def _media_keys_for_user(user: User) -> list[str]:
     keys: list[str] = []
     for asset in MediaAsset.objects.filter(user=user).only(
-        "incoming_key", "original_key", "derived_key"
+        "kind", "incoming_key", "original_key", "derived_key", "thumbnail_key"
     ):
-        keys.extend([asset.incoming_key, asset.original_key, asset.derived_key])
+        keys.extend(
+            [asset.incoming_key, asset.original_key, asset.derived_key, asset.thumbnail_key]
+        )
+        if asset.kind == "avatar":
+            keys.append(f"media/thumbnails/{asset.pk}.jpg")
     identity = PrivateIdentity.objects.filter(user=user).first()
     if identity:
         keys.append(identity.real_avatar_key)

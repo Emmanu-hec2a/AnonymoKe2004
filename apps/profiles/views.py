@@ -54,7 +54,9 @@ class ProfileView(ProfileAPI):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        profile, _ = Profile.objects.get_or_create(user=request.user)
+        profile, _ = Profile.objects.select_related(
+            "user__private_identity", "matching_preference"
+        ).get_or_create(user=request.user)
         return Response(ProfileSerializer(profile).data)
 
     @transaction.atomic
@@ -282,9 +284,16 @@ class MediaDeleteView(ProfileAPI):
         keys = [
             key
             for asset in assets
-            for key in [asset.incoming_key, asset.original_key, asset.derived_key]
+            for key in [
+                asset.incoming_key,
+                asset.original_key,
+                asset.derived_key,
+                asset.thumbnail_key,
+            ]
             if key
         ]
+        if kind == "avatar":
+            keys.extend(f"media/thumbnails/{asset.pk}.jpg" for asset in assets)
         profile = Profile.objects.filter(user=request.user).first()
         identity = getattr(request.user, "private_identity", None)
         if kind == "avatar":
