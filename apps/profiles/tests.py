@@ -795,6 +795,7 @@ class ProfileIntegrationTests(TestCase):
         asset.thumbnail_key = "media/thumbnails/header.jpg"
         asset.save(update_fields=["thumbnail_key"])
         store.return_value.presign_private.side_effect = lambda key: "private:" + key
+        store.return_value.presign_derived.side_effect = lambda key: "derived:" + key
         response = self.client.get(self.base + "profile/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
