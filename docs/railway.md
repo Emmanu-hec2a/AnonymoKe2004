@@ -59,6 +59,30 @@ image and release version as the API service.
 The API image also serves WebSockets through Daphne at `/ws/v1/matches/{match_id}/?token=<access-jwt>`.
 Keep the access token short-lived and use the normal refresh endpoint before reconnecting after expiry.
 
+## Celery Redis compatibility and photo processing
+
+The API and worker use `celery[redis]` together with `redis>=6.1,<7.0` so the
+resolver includes Celery's actual Redis transport requirements. A worker failed
+with Kombu 5.7 and redis-py 5.3.1: that transport requires redis-py 6.1 or later.
+The image now runs `pip check` and instantiates the Redis transport client
+without opening a connection. A dependency mismatch fails the build before
+release. Deploy both the API and worker when these dependencies change: the API
+must publish to the same compatible transport that the worker consumes.
+
+Worker concurrency defaults to two processes and prefetch to one task per
+process. Railway exposed 48 host CPUs to the worker, which otherwise led Celery
+to choose 48 processes. Tune `CELERY_WORKER_CONCURRENCY` and
+`CELERY_WORKER_PREFETCH_MULTIPLIER` to the actual service resources.
+
+An uploaded photo remains `processing` until the media task validates it,
+publishes a private original and blurred derivative, and marks the asset ready.
+Step 5 retains the upload ID and can retry the same photo after the worker is
+restored. The scheduled media recovery task republishes unclaimed work. Do not
+mark unfinished uploads ready or bypass photo validation to clear onboarding.
+
+[Celery Redis installation](https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/redis.html)
+describes the Redis dependency bundle.
+
 ## Migration consistency and GDAL
 
 The Docker builder and runtime use Python 3.12 on Debian Trixie, whose GDAL

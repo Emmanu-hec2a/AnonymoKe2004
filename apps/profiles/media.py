@@ -44,9 +44,9 @@ def process_avatar(asset: MediaAsset, payload: bytes) -> tuple[bytes, bytes]:
     original = BytesIO()
     image.save(original, format="JPEG", quality=90, optimize=True, exif=b"")
     crop_source = _face_crop(image, face_box) if face_box else image
-    crop = ImageOps.fit(crop_source, (24, 24), method=Image.Resampling.LANCZOS)
-    blurred = crop.filter(ImageFilter.GaussianBlur(radius=8)).resize(
-        (512, 512), Image.Resampling.NEAREST
+    crop = ImageOps.fit(crop_source, (48, 48), method=Image.Resampling.LANCZOS)
+    blurred = crop.filter(ImageFilter.GaussianBlur(radius=3.5)).resize(
+        (512, 512), Image.Resampling.BICUBIC
     )
     derived = BytesIO()
     blurred.save(derived, format="JPEG", quality=82, optimize=True, exif=b"")

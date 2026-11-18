@@ -18,7 +18,7 @@ from apps.core.crypto import decrypt_text
 
 from .models import MatchingPreference, MediaAsset, PrivateIdentity, Profile
 from .storage import MediaPayloadTooLarge
-from .tasks_media import process_media_asset, recover_media_processing
+from .tasks_media import process_media_asset, recover_media_processing, refresh_avatar_preview
 
 
 class ProfileIntegrationTests(TestCase):
@@ -166,7 +166,8 @@ class ProfileIntegrationTests(TestCase):
         )
         self.assertEqual(
             ConsentRecord.objects.filter(user=self.user, consent_type="terms", revoked_at=None)
-            .get().version,
+            .get()
+            .version,
             "new-version",
         )
 
@@ -738,3 +739,60 @@ class ProfileIntegrationTests(TestCase):
         adapter.client.delete_objects.return_value = {"Errors": [{"Code": "AccessDenied"}]}
         with self.assertRaisesMessage(RuntimeError, "erasure_storage_unavailable"):
             adapter.delete_keys(["private-key"])
+
+    @patch(
+        "apps.profiles.tasks_media.process_avatar", return_value=(b"private-copy", b"softer-blur")
+    )
+    @patch("apps.profiles.tasks_media.R2MediaStore")
+    def test_refresh_ready_preview_preserves_private_identity(self, store, process):
+        asset = self.ready_photo()
+        store.return_value.download.return_value = b"approved original"
+        self.profile.is_discoverable = False
+        self.profile.save(update_fields=["is_discoverable"])
+        self.assertEqual(refresh_avatar_preview(str(asset.pk)), "refreshed")
+        asset.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertEqual(asset.status, "ready")
+        self.assertFalse(self.profile.is_discoverable)
+        self.assertEqual(
+            PrivateIdentity.objects.get(user=self.user).real_avatar_key, "private-photo.jpg"
+        )
+        self.assertEqual(self.profile.blurred_avatar_key, "blurred-photo.jpg")
+        store.return_value.upload_private.assert_not_called()
+        store.return_value.upload_derived.assert_called_once_with(
+            "blurred-photo.jpg", b"softer-blur", "image/jpeg"
+        )
+
+    @patch("apps.profiles.tasks_media.R2MediaStore")
+    def test_refresh_does_not_process_an_unapproved_photo(self, store):
+        asset = self.asset()
+        self.assertEqual(refresh_avatar_preview(str(asset.pk)), "skipped")
+        store.assert_not_called()
+
+    @patch("apps.profiles.tasks_media.process_avatar", return_value=(b"private", b"preview"))
+    @patch("apps.profiles.tasks_media.R2MediaStore")
+    def test_refresh_does_not_publish_after_owner_is_deactivated(self, store, process):
+        asset = self.ready_photo()
+
+        def deactivate(*args, **kwargs):
+            User.objects.filter(pk=self.user.pk).update(status="suspended")
+            return b"approved original"
+
+        store.return_value.download.side_effect = deactivate
+        self.assertEqual(refresh_avatar_preview(str(asset.pk)), "removed")
+        store.return_value.upload_derived.assert_not_called()
+
+    @patch("apps.profiles.tasks_media.process_avatar", return_value=(b"private", b"preview"))
+    @patch("apps.profiles.tasks_media.R2MediaStore")
+    def test_refresh_does_not_publish_after_privacy_consent_is_revoked(self, store, process):
+        asset = self.ready_photo()
+
+        def revoke(*args, **kwargs):
+            ConsentRecord.objects.filter(user=self.user, consent_type="privacy").update(
+                revoked_at=timezone.now()
+            )
+            return b"approved original"
+
+        store.return_value.download.side_effect = revoke
+        self.assertEqual(refresh_avatar_preview(str(asset.pk)), "consent_required")
+        store.return_value.upload_derived.assert_not_called()

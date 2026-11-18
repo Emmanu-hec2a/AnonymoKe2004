@@ -36,6 +36,11 @@ RUN python -m pip install --no-cache-dir /wheels/*.whl \
 
 COPY --chown=anonymoke:anonymoke . .
 
+# Check the actual Redis transport without opening a broker connection. This
+# catches dependency mismatches before either the API or worker is deployed.
+RUN python -m pip check
+RUN python -c "from importlib.metadata import version; from kombu.transport.redis import Channel; Channel.__new__(Channel)._get_client(); print('Celery Redis transport compatible:', {name: version(name) for name in ('celery', 'kombu', 'redis')})"
+
 # Check native GIS support and migration parity before this image can be deployed.
 RUN python -c "import sys; from django.contrib.gis.gdal import GDAL_VERSION; print('GDAL version:', GDAL_VERSION); sys.exit(0 if GDAL_VERSION >= (3, 9) else 'GDAL >= 3.9 is required')"
 RUN DJANGO_SETTINGS_MODULE=config.settings.dev DATABASE_URL=sqlite://:memory: \

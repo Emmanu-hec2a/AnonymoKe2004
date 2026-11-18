@@ -141,3 +141,50 @@ def recover_media_processing():
         except Exception:  # noqa: BLE001 - next beat retains the processing intent
             logging.getLogger("anonymoke.media").warning("media_dispatch_pending")
             break
+
+
+@shared_task(queue="media")
+def refresh_avatar_preview(asset_id: str) -> str:
+    """Refresh a previously approved blur without changing visibility or identity."""
+    asset = (
+        MediaAsset.objects.filter(pk=asset_id, kind="avatar", status="ready", user__status="active")
+        .exclude(original_key="")
+        .exclude(derived_key="")
+        .first()
+    )
+    if not asset:
+        return "skipped"
+    try:
+        store = R2MediaStore()
+        payload = store.download(asset.original_key, max_bytes=settings.MEDIA_AVATAR_MAX_BYTES)
+        _, preview = process_avatar(asset, payload)
+        with transaction.atomic():
+            user = (
+                User.objects.select_for_update().filter(pk=asset.user_id, status="active").first()
+            )
+            if not user:
+                return "removed"
+            current = (
+                MediaAsset.objects.select_for_update()
+                .filter(
+                    pk=asset.pk,
+                    status="ready",
+                    original_key=asset.original_key,
+                    derived_key=asset.derived_key,
+                )
+                .first()
+            )
+            if not current:
+                return "superseded"
+            if not all(has_active_consent(user, kind) for kind in ("privacy", "sensitive_data")):
+                return "consent_required"
+            # Keep the tracked object key so erasure still covers this derivative.
+            store.upload_derived(current.derived_key, preview, "image/jpeg")
+        return "refreshed"
+    except MediaRejected:
+        return "skipped"
+    except Exception as error:  # noqa: BLE001 - preserve the existing approved preview
+        logging.getLogger("anonymoke.media").warning(
+            "avatar_preview_refresh_unavailable (error_type=%s)", type(error).__name__
+        )
+        return "unavailable"

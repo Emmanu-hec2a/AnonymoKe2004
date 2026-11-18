@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from django.conf import settings
 from django.test import override_settings
-from PIL import Image, ImageDraw, ImageStat
+from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 
 if not settings.configured and not os.getenv("DJANGO_SETTINGS_MODULE"):
     settings.configure(SECRET_KEY="unit-tests", USE_TZ=True)
@@ -40,7 +40,30 @@ class AvatarPrivacyTests(TestCase):
         self.assertEqual(preview.size, (512, 512))
         self.assertFalse(source.getexif())
         self.assertFalse(preview.getexif())
-        self.assertLess(ImageStat.Stat(preview).stddev[0], ImageStat.Stat(source).stddev[0] * 0.8)
+        self.assertLess(ImageStat.Stat(preview).stddev[0], ImageStat.Stat(source).stddev[0] * 0.95)
+
+    def test_softer_preview_retains_more_outline_than_the_previous_blur(self):
+        original, current = process_avatar(SimpleNamespace(), self.photo())
+        image = Image.open(BytesIO(original))
+        legacy = ImageOps.fit(image, (24, 24), method=Image.Resampling.LANCZOS)
+        legacy = legacy.filter(ImageFilter.GaussianBlur(radius=8))
+        self.assertGreater(
+            ImageStat.Stat(Image.open(BytesIO(current))).stddev[0],
+            ImageStat.Stat(legacy).stddev[0] * 1.5,
+        )
+
+    def test_softer_preview_still_suppresses_fine_identifying_detail(self):
+        image = Image.new("RGB", (400, 400), "black")
+        draw = ImageDraw.Draw(image)
+        for x in range(0, 400, 2):
+            draw.line((x, 0, x, 399), fill="white")
+        payload = BytesIO()
+        image.save(payload, format="PNG")
+        original, preview = process_avatar(SimpleNamespace(), payload.getvalue())
+        self.assertLess(
+            ImageStat.Stat(Image.open(BytesIO(preview))).stddev[0],
+            ImageStat.Stat(Image.open(BytesIO(original))).stddev[0] * 0.15,
+        )
 
     def test_corrupt_image_is_rejected(self):
         with self.assertRaisesRegex(MediaRejected, "avatar_invalid"):
