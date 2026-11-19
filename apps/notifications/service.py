@@ -15,6 +15,12 @@ class PushResult:
     unavailable_reason: str = ""
 
 
+def _skipped(event_type: str, user_id, reason: str) -> PushResult:
+    # Surface why a push was not attempted; callers otherwise only see a status string.
+    logger.info("push_skipped event=%s user=%s reason=%s", event_type, user_id, reason)
+    return PushResult(unavailable_reason=reason)
+
+
 def _firebase_app():
     if not settings.FIREBASE_SERVICE_ACCOUNT_JSON:
         return None
@@ -77,21 +83,21 @@ def send_user_event(
 
         profile = Profile.objects.filter(user_id=user_id).first()
         if not profile:
-            return PushResult(unavailable_reason="relationship_unavailable")
+            return _skipped(event_type, user_id, "relationship_unavailable")
         try:
             participant_match(profile, match_id)
         except ValueError:
-            return PushResult(unavailable_reason="relationship_unavailable")
+            return _skipped(event_type, user_id, "relationship_unavailable")
     app = _firebase_app()
     if app is None:
         logger.info("firebase_notifications_disabled", extra={"event_type": event_type})
-        return PushResult(unavailable_reason="push_unconfigured")
+        return _skipped(event_type, user_id, "push_unconfigured")
 
     import firebase_admin.messaging as messaging
 
     devices = list(DeviceToken.objects.filter(user_id=user_id, is_enabled=True))
     if not devices:
-        return PushResult(unavailable_reason="no_registered_device")
+        return _skipped(event_type, user_id, "no_registered_device")
     title, body = _content(event_type, actor_alias)
     data = {"type": event_type}
     if match_id:
@@ -119,12 +125,25 @@ def send_user_event(
                 accepted += 1
                 continue
             error = str(result.exception).lower()
+            logger.warning(
+                "push_send_failed event=%s error_type=%s",
+                event_type,
+                type(result.exception).__name__,
+            )
             if "unregistered" in error or "invalid" in error:
                 invalid_tokens.append(device.token)
             else:
                 transient_failure = True
     if invalid_tokens:
         DeviceToken.objects.filter(token__in=invalid_tokens).update(is_enabled=False)
+    logger.info(
+        "push_delivery_result event=%s user=%s devices=%d accepted=%d invalid_tokens=%d",
+        event_type,
+        user_id,
+        len(devices),
+        accepted,
+        len(invalid_tokens),
+    )
     if accepted == 0 and transient_failure:
         raise RuntimeError("push_temporarily_unavailable")
     return PushResult(
