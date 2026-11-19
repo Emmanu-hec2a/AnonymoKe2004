@@ -74,9 +74,26 @@ def candidate_queryset(
                     expires_at__gt=timezone.now(),
                 )
             ),
+            # People who already liked you come first: one like from you makes a match.
+            # This never reaches the client; "who liked you" stays a premium list.
+            liked_me=Exists(
+                Swipe.objects.filter(
+                    from_profile_id=OuterRef("pk"),
+                    to_profile=me,
+                    action=Swipe.Action.LIKE,
+                    is_undone=False,
+                )
+            ),
         )
         .filter(distance_m__lte=F("max_distance_km") * 1000)
-        .order_by("-boost_active", "distance_m", "-verification_level", "-updated_at", "id")
+        .order_by(
+            "-liked_me",
+            "-boost_active",
+            "distance_m",
+            "-verification_level",
+            "-updated_at",
+            "id",
+        )
     )
     return candidates
 

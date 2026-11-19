@@ -167,8 +167,49 @@ class DiscoverIntegrationTests(TestCase):
         self.assertEqual(candidate_feed(self.me)[0].pk, self.other.pk)
         next_id = uuid.uuid4()
         record_swipe(self.me, self.other.public_id, "like", next_id)
-        with self.assertRaisesMessage(ValueError, "pass_not_found"):
-            undo_pass(self.me, next_id)
+        with self.assertRaisesMessage(ValueError, "swipe_not_found"):
+            undo_pass(self.me, uuid.uuid4())
+
+    def test_like_can_be_withdrawn_without_premium_unless_matched(self):
+        client_id = uuid.uuid4()
+        record_swipe(self.me, self.other.public_id, "like", client_id)
+        self.assertEqual(candidate_feed(self.me), [])
+        swipe = undo_pass(self.me, client_id)
+        self.assertTrue(swipe.is_undone)
+        self.assertEqual(candidate_feed(self.me)[0].pk, self.other.pk)
+        # The other side no longer sees the like.
+        self.assertFalse(Swipe.objects.filter(to_profile=self.other, is_undone=False).exists())
+        matched_id = uuid.uuid4()
+        record_swipe(self.other, self.me.public_id, "like", uuid.uuid4())
+        self.assertIsNotNone(record_swipe(self.me, self.other.public_id, "like", matched_id).match)
+        with self.assertRaisesMessage(ValueError, "like_already_matched"):
+            undo_pass(self.me, matched_id)
+
+    def test_unanswered_likes_expire_after_24h_but_matched_likes_stay(self):
+        from apps.matching.services import expire_unanswered_likes
+
+        stale = record_swipe(self.me, self.other.public_id, "like", uuid.uuid4()).swipe
+        matched = self.make_profile("matched@example.test", "M", 30, 36.83)
+        record_swipe(matched, self.me.public_id, "like", uuid.uuid4())
+        kept = record_swipe(self.me, matched.public_id, "like", uuid.uuid4()).swipe
+        old = timezone.now() - timedelta(hours=25)
+        Swipe.objects.filter(pk__in=[stale.pk, kept.pk]).update(created_at=old)
+        self.assertEqual(expire_unanswered_likes(), 1)
+        stale.refresh_from_db()
+        kept.refresh_from_db()
+        self.assertTrue(stale.is_undone)
+        self.assertFalse(kept.is_undone)
+        self.assertEqual(candidate_feed(self.me)[0].pk, self.other.pk)
+        # Liking again after expiry works and reuses the row.
+        again = record_swipe(self.me, self.other.public_id, "like", uuid.uuid4()).swipe
+        self.assertEqual(again.pk, stale.pk)
+        self.assertFalse(again.is_undone)
+
+    def test_people_who_liked_me_rank_first(self):
+        nearer = self.make_profile("nearer@example.test", "M", 26, 36.821)
+        self.assertEqual(candidate_feed(self.me)[0].pk, nearer.pk)
+        record_swipe(self.other, self.me.public_id, "like", uuid.uuid4())
+        self.assertEqual(candidate_feed(self.me)[0].pk, self.other.pk)
 
     def test_out_of_range_or_blocked_profile_cannot_be_swiped(self):
         from apps.safety.models import Block
