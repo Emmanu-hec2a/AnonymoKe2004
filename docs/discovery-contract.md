@@ -21,7 +21,8 @@ minutes. New audio URLs are not issued after voice consent is revoked.
 
 ## Endpoints
 
-- `GET /api/v1/discover/`: up to 20 unseen eligible cards. Subsequent requests
+- `GET /api/v1/discover/`: up to 20 unseen eligible cards, people who already
+  liked you first (never marked as such on the card). Subsequent requests
   exclude accepted swipes, so the app refills after finishing a batch. Query filters
   can narrow saved preferences. The app saves changed preferences through
   `PATCH /api/v1/me/profile/` before refreshing the feed. Clear filters restores
@@ -33,9 +34,15 @@ minutes. New audio URLs are not issued after voice consent is revoked.
   `client_swipe_id`. Returns `is_match`, `match_id`, and `client_swipe_id`.
   The mobile app retains a failed card and retries with the same ID. It advances
   only after server acceptance.
-- `POST /api/v1/swipes/undo/`: requires `client_swipe_id`. Only the most recent
-  accepted pass can be undone, and an active Premium entitlement is required.
-  Likes and matches cannot be undone. Repeating an undo is idempotent.
+- `POST /api/v1/swipes/undo/`: requires `client_swipe_id`. A pass: only the most
+  recent accepted pass can be undone, and an active Premium entitlement is
+  required. A like: any unanswered like can be withdrawn, no Premium needed;
+  a like that already became a match returns `like_already_matched` (close the
+  match instead). Repeating an undo is idempotent. Unknown ids return
+  `swipe_not_found`.
+- Unanswered likes expire 24 hours after they are made (checked every 10
+  minutes). The profile returns to the liker's feed and leaves the other
+  person's likes list; liking again later is allowed.
 - `GET /api/v1/me/boost/`: returns `active_until` and `available_boosts`.
 - `POST /api/v1/me/boost/`: requires a UUID `client_activation_id`. Consumes one
   purchased Boost entitlement and activates ranking priority for 30 minutes.

@@ -7,7 +7,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.gis.measure import D
 from django.db import connection, transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from apps.compliance.consent import has_active_consent
@@ -19,6 +19,7 @@ from .models import Match, Swipe
 
 STALE_LOCATION_DAYS = 7
 UNMASK_COOLDOWN_HOURS = 24
+LIKE_TTL_HOURS = 24
 logger = logging.getLogger("anonymoke.matching")
 
 
@@ -199,12 +200,6 @@ def undo_pass(me: Profile, client_swipe_id):
 
     ensure_discovery_access(me)
     _lock_pair(me, me)
-    if (
-        not Entitlement.objects.filter(user=me.user, kind="premium", quantity__gt=0)
-        .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
-        .exists()
-    ):
-        raise ValueError("premium_required")
     swipe = (
         Swipe.objects.select_related("to_profile")
         .filter(
@@ -213,8 +208,16 @@ def undo_pass(me: Profile, client_swipe_id):
         )
         .first()
     )
-    if not swipe or swipe.action != Swipe.Action.PASS:
-        raise ValueError("pass_not_found")
+    if not swipe:
+        raise ValueError("swipe_not_found")
+    if swipe.action == Swipe.Action.LIKE:
+        return _undo_like(me, swipe)
+    if (
+        not Entitlement.objects.filter(user=me.user, kind="premium", quantity__gt=0)
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
+        .exists()
+    ):
+        raise ValueError("premium_required")
     _lock_pair(me, swipe.to_profile)
     swipe = Swipe.objects.select_for_update().get(pk=swipe.pk)
     if swipe.is_undone:
@@ -230,6 +233,43 @@ def undo_pass(me: Profile, client_swipe_id):
     swipe.is_undone = True
     swipe.save(update_fields=["is_undone", "updated_at"])
     return swipe
+
+
+def _undo_like(me: Profile, swipe: Swipe) -> Swipe:
+    # Withdrawing a like is free and not limited to the latest swipe, but a like that
+    # already became a match is withdrawn by closing the match instead.
+    _lock_pair(me, swipe.to_profile)
+    swipe = Swipe.objects.select_for_update().select_related("to_profile").get(pk=swipe.pk)
+    if swipe.is_undone:
+        return swipe
+    if _match_for_pair(me, swipe.to_profile) is not None:
+        raise ValueError("like_already_matched")
+    swipe.is_undone = True
+    swipe.save(update_fields=["is_undone", "updated_at"])
+    return swipe
+
+
+def expire_unanswered_likes(now=None) -> int:
+    """Withdraw likes older than LIKE_TTL_HOURS that never became a match.
+
+    The liked profile returns to the liker's Discover feed and leaves the other
+    person's "likes you" list. Likes that produced a live match are kept.
+    """
+    now = now or timezone.now()
+    cutoff = now - timedelta(hours=LIKE_TTL_HOURS)
+    live_match = Match.objects.exclude(state=Match.State.CLOSED).filter(
+        Q(profile_a_id=OuterRef("from_profile_id"), profile_b_id=OuterRef("to_profile_id"))
+        | Q(profile_a_id=OuterRef("to_profile_id"), profile_b_id=OuterRef("from_profile_id"))
+    )
+    return (
+        Swipe.objects.filter(
+            action=Swipe.Action.LIKE,
+            is_undone=False,
+            created_at__lt=cutoff,
+        )
+        .exclude(Exists(live_match))
+        .update(is_undone=True, updated_at=now)
+    )
 
 
 def _match_for_pair(first: Profile, second: Profile) -> Match | None:

@@ -260,6 +260,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.chat.tasks.retry_pending_moderation",
         "schedule": 60,
     },
+    "expire-unanswered-likes": {
+        "task": "apps.matching.tasks.expire_likes",
+        "schedule": 600,
+    },
     "purge-stale-locations-daily": {
         "task": "apps.profiles.tasks.purge_stale_locations",
         "schedule": 86400,
