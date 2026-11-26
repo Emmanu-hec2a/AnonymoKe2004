@@ -36,7 +36,9 @@ def card_data(profile, store):
         "age_years": profile.age_years,
         "height_cm": profile.height_cm,
         "bio": profile.bio,
-        "distance_bucket": distance_bucket(profile.distance_m.m / 1000),
+        "distance_bucket": distance_bucket(profile.distance_m.m / 1000)
+        if getattr(profile, "distance_m", None) is not None
+        else None,
         "interests": profile.interests,
         "blurred_avatar_url": store.presign_derived(profile.blurred_avatar_key)
         if store and profile.blurred_avatar_key

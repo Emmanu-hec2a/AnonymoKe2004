@@ -260,6 +260,68 @@ class MatchesIntegrationTests(TestCase):
         self.assertEqual(response.data["items"][0]["profile_id"], str(liker.public_id))
         self.assertNotIn("real_avatar_url", response.data["items"][0])
 
+    def test_sent_likes_list_shows_waiting_likes_and_lets_me_withdraw(self):
+        waiting = self.profile("waiting")
+        swipe = Swipe.objects.create(
+            from_profile=self.me, to_profile=waiting, action="like", client_swipe_id=uuid.uuid4()
+        )
+        # A like that became a live match (self.other) and a withdrawn like are not listed.
+        Swipe.objects.create(
+            from_profile=self.me, to_profile=self.other, action="like", client_swipe_id=uuid.uuid4()
+        )
+        Swipe.objects.create(
+            from_profile=self.me,
+            to_profile=self.profile("gone"),
+            action="like",
+            client_swipe_id=uuid.uuid4(),
+            is_undone=True,
+        )
+        Swipe.objects.create(
+            from_profile=self.me,
+            to_profile=self.profile("passed"),
+            action="pass",
+            client_swipe_id=uuid.uuid4(),
+        )
+        response = self.client.get("/api/v1/likes/sent/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        item = response.data["items"][0]
+        self.assertEqual(item["profile_id"], str(waiting.public_id))
+        self.assertEqual(item["client_swipe_id"], str(swipe.client_swipe_id))
+        self.assertEqual(item["expires_at"], swipe.created_at + timedelta(hours=24))
+        self.assertNotIn("real_avatar_url", item)
+        self.assertIsNone(response.data["next_cursor"])
+
+        undo = self.client.post(
+            "/api/v1/swipes/undo/", {"client_swipe_id": item["client_swipe_id"]}
+        )
+        self.assertEqual(undo.status_code, 200, undo.data)
+        response = self.client.get("/api/v1/likes/sent/")
+        self.assertEqual(response.data["count"], 0)
+        self.assertEqual(response.data["items"], [])
+
+    def test_sent_likes_paginate_newest_first_with_signed_cursor(self):
+        people = [self.profile(f"p{i}") for i in range(22)]
+        base = timezone.now() - timedelta(hours=5)
+        for index, person in enumerate(people):
+            swipe = Swipe.objects.create(
+                from_profile=self.me, to_profile=person, action="like", client_swipe_id=uuid.uuid4()
+            )
+            Swipe.objects.filter(pk=swipe.pk).update(created_at=base + timedelta(minutes=index))
+        first = self.client.get("/api/v1/likes/sent/")
+        self.assertEqual(first.data["count"], 22)
+        self.assertEqual(len(first.data["items"]), 20)
+        self.assertEqual(first.data["items"][0]["profile_id"], str(people[21].public_id))
+        self.assertIsNotNone(first.data["next_cursor"])
+        second = self.client.get(f"/api/v1/likes/sent/?cursor={first.data['next_cursor']}")
+        self.assertEqual(
+            [item["profile_id"] for item in second.data["items"]],
+            [str(people[1].public_id), str(people[0].public_id)],
+        )
+        self.assertIsNone(second.data["next_cursor"])
+        bad = self.client.get("/api/v1/likes/sent/?cursor=not-a-cursor")
+        self.assertEqual(bad.status_code, 400)
+
     @patch("apps.chat.services.publish_approved_message")
     def test_only_staff_can_review_messages_and_approval_is_idempotent(self, publish):
         message = self.message(status="flagged")
