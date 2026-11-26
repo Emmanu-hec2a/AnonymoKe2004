@@ -33,6 +33,7 @@ def inbox_queryset(profile):
             activity_at=Coalesce(Subquery(latest.values("created_at")[:1]), F("created_at")),
             last_body=Subquery(latest.values("body")[:1]),
             last_status=Subquery(latest.values("moderation_status")[:1]),
+            last_attachment_kind=Subquery(latest.values("attachment__kind")[:1]),
             last_sender=Subquery(latest.values("sender_id")[:1]),
             unread_count=Coalesce(Subquery(unread[:1]), Value(0), output_field=IntegerField()),
         )
@@ -60,6 +61,8 @@ def match_summary(match, profile, store=None):
     if cooldown and cooldown <= timezone.now():
         cooldown = None
     preview = getattr(match, "last_body", None)
+    if not preview and getattr(match, "last_attachment_kind", None):
+        preview = "Photo" if match.last_attachment_kind == "image" else "Voice note"
     status = getattr(match, "last_status", None)
     if status and status != "clear":
         preview = {

@@ -100,7 +100,7 @@ def _face_crop(image: Image.Image, face_box: tuple[int, int, int, int]) -> Image
     return image.crop((left, top, right, bottom))
 
 
-def process_audio(asset: MediaAsset, payload: bytes) -> tuple[bytes, int]:
+def process_audio(asset: MediaAsset, payload: bytes, *, max_duration_ms=None) -> tuple[bytes, int]:
     if len(payload) > settings.MEDIA_AUDIO_MAX_BYTES:
         raise MediaRejected("audio_too_large")
     with TemporaryDirectory(prefix="anonymoke-media-") as directory:
@@ -108,7 +108,14 @@ def process_audio(asset: MediaAsset, payload: bytes) -> tuple[bytes, int]:
         output = Path(directory) / "processed.m4a"
         source.write_bytes(payload)
         duration_ms = _audio_duration_ms(source)
-        if duration_ms <= 0 or duration_ms > settings.MEDIA_AUDIO_MAX_DURATION_MS:
+        limit = (
+            min(60000, max_duration_ms)
+            if max_duration_ms is not None
+            else min(15000, settings.MEDIA_AUDIO_MAX_DURATION_MS)
+        )
+        if duration_ms <= 0 or duration_ms > limit + (
+            500 if max_duration_ms is not None else settings.MEDIA_AUDIO_MAX_DURATION_MS - limit
+        ):
             raise MediaRejected("audio_duration_invalid")
         command = [
             "ffmpeg",
@@ -150,7 +157,7 @@ def process_audio(asset: MediaAsset, payload: bytes) -> tuple[bytes, int]:
             "-movflags",
             "+faststart",
             "-t",
-            str(min(15000, settings.MEDIA_AUDIO_MAX_DURATION_MS) / 1000),
+            str(limit / 1000),
             str(output),
         ]
         try:
@@ -165,7 +172,7 @@ def process_audio(asset: MediaAsset, payload: bytes) -> tuple[bytes, int]:
             raise MediaRejected("audio_processing_unavailable") from exc
         if not processed:
             raise MediaRejected("audio_processing_unavailable")
-        return processed, min(duration_ms, 15000)
+        return processed, min(duration_ms, limit)
 
 
 def _audio_duration_ms(path: Path) -> int:

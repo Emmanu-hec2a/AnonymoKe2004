@@ -49,6 +49,12 @@ def purge_user_data(
 
 def _media_keys_for_user(user: User) -> list[str]:
     keys: list[str] = []
+    from apps.chat.models import ChatAttachment
+
+    for asset in ChatAttachment.objects.filter(sender__user=user).only(
+        "incoming_key", "object_key"
+    ):
+        keys.extend([asset.incoming_key, asset.object_key])
     for asset in MediaAsset.objects.filter(user=user).only(
         "kind", "incoming_key", "original_key", "derived_key", "thumbnail_key"
     ):

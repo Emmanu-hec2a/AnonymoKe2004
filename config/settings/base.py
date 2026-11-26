@@ -184,6 +184,8 @@ REST_FRAMEWORK = {
         "swipe": "120/min",
         "chat_read": "120/min",
         "chat_send": "60/min",
+        "chat_activity": "120/min",
+        "chat_media": "20/hour",
         "match_actions": "30/min",
         "matches": "120/min",
         "report": "30/hour",
@@ -239,6 +241,14 @@ CELERY_TASK_ROUTES = {
     "apps.safety.tasks.dispatch_panic_alert": {"queue": "safety"},
 }
 CELERY_BEAT_SCHEDULE = {
+    "recover-chat-attachments": {
+        "task": "apps.chat.media.recover_chat_attachments",
+        "schedule": 60,
+    },
+    "purge-unused-chat-uploads": {
+        "task": "apps.chat.media.purge_unused_chat_uploads",
+        "schedule": 3600,
+    },
     "recover-media-processing": {
         "task": "apps.profiles.tasks_media.recover_media_processing",
         "schedule": 60,

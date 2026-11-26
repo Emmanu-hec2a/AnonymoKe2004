@@ -5,6 +5,11 @@ from celery import shared_task
 from django.db.models import Q
 from django.utils import timezone
 
+from .media import (  # noqa: F401 - register media tasks with Celery autodiscovery
+    process_chat_attachment,
+    purge_unused_chat_uploads,
+    recover_chat_attachments,
+)
 from .models import Message
 
 logger = logging.getLogger("anonymoke.chat")

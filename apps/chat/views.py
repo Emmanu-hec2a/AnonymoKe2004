@@ -11,8 +11,9 @@ from apps.core.cursors import decode_cursor, encode_cursor
 from apps.matching.services import participant_match
 from apps.profiles.models import Profile
 
+from .activity import peer_activity, update_activity
 from .serializers import MessageSerializer, MessageWriteSerializer
-from .services import list_messages, mark_read, send_message, visible_messages
+from .services import list_messages, mark_delivered, mark_read, send_message, visible_messages
 
 
 def _profile_for_user(user):
@@ -20,6 +21,11 @@ def _profile_for_user(user):
 
 
 class MessageListCreateView(APIView):
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        response["Cache-Control"] = "no-store"
+        return response
+
     permission_classes = [IsAuthenticated]
     throttle_classes = [ScopedRateThrottle]
 
@@ -54,8 +60,11 @@ class MessageListCreateView(APIView):
             )
             return Response(
                 {
-                    "items": MessageSerializer(items[::-1], many=True).data,
+                    "items": MessageSerializer(
+                        items[::-1], many=True, context={"viewer": profile}
+                    ).data,
                     "next_cursor": next_cursor,
+                    "activity": peer_activity(profile, match_id),
                 }
             )
         before_value = request.query_params.get("before")
@@ -70,7 +79,11 @@ class MessageListCreateView(APIView):
             return Response({"error": {"code": str(exc)}}, status=404)
         next_cursor = messages[0].created_at.isoformat() if messages else None
         return Response(
-            {"items": MessageSerializer(messages, many=True).data, "next_cursor": next_cursor}
+            {
+                "items": MessageSerializer(messages, many=True, context={"viewer": profile}).data,
+                "next_cursor": next_cursor,
+                "activity": peer_activity(profile, match_id),
+            }
         )
 
     def post(self, request, match_id):
@@ -82,13 +95,25 @@ class MessageListCreateView(APIView):
                 match_id,
                 serializer.validated_data["body"],
                 serializer.validated_data.get("client_message_id"),
+                serializer.validated_data.get("reply_to_id"),
+                serializer.validated_data.get("attachment_id"),
             )
         except ValueError as exc:
             return Response({"error": {"code": str(exc)}}, status=400)
-        return Response(MessageSerializer(result.message).data, status=201)
+        return Response(
+            MessageSerializer(
+                result.message, context={"viewer": _profile_for_user(request.user)}
+            ).data,
+            status=201,
+        )
 
 
 class MessageReadView(APIView):
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        response["Cache-Control"] = "no-store"
+        return response
+
     permission_classes = [IsAuthenticated]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "chat_read"
@@ -109,3 +134,45 @@ class MessageReadView(APIView):
 
 class ReadAnchorSerializer(serializers.Serializer):
     through_message_id = serializers.UUIDField(required=False)
+
+
+class DeliverySerializer(serializers.Serializer):
+    message_ids = serializers.ListField(child=serializers.UUIDField(), max_length=100)
+
+
+class MessageDeliveryView(MessageReadView):
+    def post(self, request, match_id):
+        serializer = DeliverySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            count = mark_delivered(
+                _profile_for_user(request.user), match_id, serializer.validated_data["message_ids"]
+            )
+        except ValueError as error:
+            return Response({"error": {"code": str(error)}}, status=404)
+        return Response({"marked_delivered": count})
+
+
+class ActivitySerializer(serializers.Serializer):
+    session_id = serializers.UUIDField()
+    active = serializers.BooleanField()
+    typing = serializers.BooleanField(default=False)
+
+
+class ChatActivityView(MessageReadView):
+    throttle_scope = "chat_activity"
+
+    def put(self, request, match_id):
+        serializer = ActivitySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            activity = update_activity(
+                _profile_for_user(request.user),
+                match_id,
+                str(serializer.validated_data["session_id"]),
+                active=serializer.validated_data["active"],
+                typing=serializer.validated_data["typing"],
+            )
+        except ValueError as error:
+            return Response({"error": {"code": str(error)}}, status=404)
+        return Response(activity)

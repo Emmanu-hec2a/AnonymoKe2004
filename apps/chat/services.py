@@ -7,6 +7,7 @@ from channels.layers import get_channel_layer
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.matching.services import _lock_pair, participant_match
@@ -32,7 +33,9 @@ def _blocked(first, second) -> bool:
 
 
 @transaction.atomic
-def send_message(profile, match_id, body: str, client_message_id=None) -> MessageResult:
+def send_message(
+    profile, match_id, body: str, client_message_id=None, reply_to_id=None, attachment_id=None
+) -> MessageResult:
     match = participant_match(profile, match_id)
     if match.state == match.State.CLOSED:
         raise ValueError("match_closed")
@@ -40,7 +43,7 @@ def send_message(profile, match_id, body: str, client_message_id=None) -> Messag
     if _blocked(profile, other):
         raise ValueError("messaging_blocked")
     normalized = body.strip()
-    if not normalized:
+    if not normalized and not attachment_id:
         raise ValueError("message_empty")
     if len(normalized) > settings.CHAT_MAX_MESSAGE_LENGTH:
         raise ValueError("message_too_long")
@@ -50,9 +53,39 @@ def send_message(profile, match_id, body: str, client_message_id=None) -> Messag
             match=match, sender=profile, client_message_id=client_message_id
         ).first()
         if existing:
-            if existing.body != normalized:
+            if (
+                existing.body != normalized
+                or str(existing.reply_to_id or "") != str(reply_to_id or "")
+                or str(existing.attachment_id or "") != str(attachment_id or "")
+            ):
                 raise ValueError("client_message_id_conflict")
             return MessageResult(message=existing, flags=())
+    reply = None
+    if reply_to_id:
+        reply = Message.objects.filter(
+            pk=reply_to_id, match=match, moderation_status="clear", deleted_at__isnull=True
+        ).first()
+        if not reply:
+            raise ValueError("reply_message_unavailable")
+    attachment = None
+    if attachment_id:
+        from .media import ensure_media_access
+        from .models import ChatAttachment
+
+        attachment = (
+            ChatAttachment.objects.select_for_update(of=("self",))
+            .filter(
+                pk=attachment_id,
+                sender=profile,
+                match=match,
+                status__in=["processing", "ready"],
+                message__isnull=True,
+            )
+            .first()
+        )
+        if not attachment:
+            raise ValueError("attachment_unavailable")
+        ensure_media_access(profile, match_id, attachment.kind)
     flags = scan_text(normalized)
     categories = {flag.category for flag in flags}
     if match.state == match.State.MASKED and "contact_exchange" in categories:
@@ -64,6 +97,8 @@ def send_message(profile, match_id, body: str, client_message_id=None) -> Messag
         body=normalized,
         moderation_status=status,
         client_message_id=client_message_id,
+        reply_to=reply,
+        attachment=attachment,
     )
     from apps.safety.tasks import scan_content
 
@@ -124,6 +159,14 @@ def moderate_message(message_id):
     )
     if not message or message.moderation_status != Message.ModerationStatus.QUEUED:
         return 0
+    if message.attachment_id:
+        asset = message.attachment
+        if asset.status not in {"ready", "rejected"}:
+            return 0
+        if asset.status == "rejected":
+            message.moderation_status = Message.ModerationStatus.BLOCKED
+            message.save(update_fields=["moderation_status", "updated_at"])
+            return 0
     try:
         participant_match(message.sender, message.match_id)
     except ValueError:
@@ -184,7 +227,9 @@ def visible_messages(profile, match):
     return (
         Message.objects.filter(match=match, deleted_at__isnull=True)
         .filter(Q(sender=profile) | Q(moderation_status=Message.ModerationStatus.CLEAR))
-        .select_related("sender")
+        .select_related(
+            "sender", "attachment__sender__user", "reply_to__sender", "reply_to__attachment"
+        )
     )
 
 
@@ -204,7 +249,40 @@ def mark_read(profile, match_id, through_message_id=None) -> int:
         queryset = queryset.filter(
             Q(created_at__lt=anchor.created_at) | Q(created_at=anchor.created_at, pk__lte=anchor.pk)
         )
-    return queryset.update(read_at=timezone.now())
+    now = timezone.now()
+    count = queryset.update(read_at=now, delivered_at=Coalesce("delivered_at", now), updated_at=now)
+    if count:
+        _publish_receipts(match_id)
+    return count
+
+
+def _publish_receipts(match_id):
+    def publish():
+        try:
+            layer = get_channel_layer()
+            if layer:
+                async_to_sync(layer.group_send)(f"match-{match_id}", {"type": "chat.receipts"})
+        except Exception:  # noqa: BLE001
+            logger.debug("chat_receipt_realtime_unavailable")
+
+    transaction.on_commit(publish)
+
+
+@transaction.atomic
+def mark_delivered(profile, match_id, message_ids):
+    match = participant_match(profile, match_id)
+    if not message_ids or len(message_ids) > 100:
+        return 0
+    messages = Message.objects.filter(
+        pk__in=message_ids, match=match, moderation_status="clear", deleted_at__isnull=True
+    ).exclude(sender=profile)
+    if messages.count() != len(set(message_ids)):
+        raise ValueError("message_not_found")
+    now = timezone.now()
+    count = messages.filter(delivered_at__isnull=True).update(delivered_at=now, updated_at=now)
+    if count:
+        _publish_receipts(match_id)
+    return count
 
 
 @transaction.atomic

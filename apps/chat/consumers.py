@@ -1,6 +1,5 @@
 import time
 import uuid
-from urllib.parse import parse_qs
 
 import jwt
 from channels.db import database_sync_to_async
@@ -11,15 +10,25 @@ from apps.accounts.models import User
 from apps.matching.services import participant_match
 from apps.profiles.models import Profile
 
+from .activity import peer_activity, update_activity
 from .models import Message
 from .serializers import MessageSerializer
-from .services import mark_read, send_message
+from .services import mark_delivered, mark_read, send_message
 
 
 class ChatConsumer(AsyncJsonWebsocketConsumer):
+    async def receive(self, text_data=None, bytes_data=None, **kwargs):
+        if bytes_data is not None or (text_data is not None and len(text_data) > 16384):
+            await self.close(code=1009)
+            return
+        try:
+            await super().receive(text_data=text_data, bytes_data=bytes_data, **kwargs)
+        except (ValueError, TypeError):
+            await self.close(code=4400)
+
     async def connect(self):
         self.match_id = self.scope["url_route"]["kwargs"]["match_id"]
-        token = parse_qs(self.scope.get("query_string", b"").decode()).get("token", [None])[0]
+        token = None  # Bearer headers keep session credentials out of access logs.
         headers = dict(self.scope.get("headers", []))
         authorization = headers.get(b"authorization", b"").decode()
         if authorization.startswith("Bearer "):
@@ -31,14 +40,26 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             return
         self.group_name = f"match-{self.match_id}"
         self.message_times = []
+        self.event_times = []
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+        await self.send_json({"type": "activity", **await self._activity(True, False)})
 
     async def disconnect(self, close_code):  # noqa: ARG002
         if hasattr(self, "group_name"):
+            try:
+                await self._activity(False, False)
+            except ValueError:
+                pass
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     async def receive_json(self, content, **kwargs):  # noqa: ARG002
+        now = time.monotonic()
+        self.event_times = [stamp for stamp in self.event_times if now - stamp < 10]
+        if len(self.event_times) >= 20:
+            await self.send_json({"type": "error", "code": "event_rate_limited"})
+            return
+        self.event_times.append(now)
         if not await self._authenticate(self.token, self.match_id):
             await self.close(code=4403)
             return
@@ -47,7 +68,23 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             return
         message_type = content.get("type")
         if message_type == "ping":
-            await self.send_json({"type": "pong"})
+            await self.send_json({"type": "pong", **await self._activity(True, False)})
+            return
+        if message_type == "activity":
+            active, typing = content.get("active"), content.get("typing", False)
+            if not isinstance(active, bool) or not isinstance(typing, bool):
+                await self.send_json({"type": "error", "code": "event_invalid"})
+                return
+            await self.send_json({"type": "activity", **await self._activity(active, typing)})
+            return
+        if message_type == "delivered":
+            try:
+                ids = content.get("message_ids", [])
+                if not isinstance(ids, list) or len(ids) > 100:
+                    raise ValueError("event_invalid")
+                await self._delivered([uuid.UUID(value) for value in ids])
+            except (ValueError, TypeError, AttributeError):
+                await self.send_json({"type": "error", "code": "event_invalid"})
             return
         if message_type == "read":
             try:
@@ -74,6 +111,8 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 self.match_id,
                 content["body"],
                 uuid.UUID(client_id) if client_id else None,
+                uuid.UUID(content["reply_to_id"]) if content.get("reply_to_id") else None,
+                uuid.UUID(content["attachment_id"]) if content.get("attachment_id") else None,
             )
             await self.send_json({"type": "message.ack", **payload})
         except (ValueError, TypeError, AttributeError) as exc:
@@ -104,7 +143,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             )
             .first()
         )
-        return dict(MessageSerializer(message).data) if message else None
+        return (
+            dict(MessageSerializer(message, context={"viewer": self.profile}).data)
+            if message
+            else None
+        )
 
     @database_sync_to_async
     def _authenticate(self, raw_token, match_id):
@@ -127,11 +170,40 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             return None
 
     @database_sync_to_async
-    def _send_message(self, profile, match_id, body, client_id):
+    def _send_message(self, profile, match_id, body, client_id, reply_to=None, attachment=None):
         return dict(
-            MessageSerializer(send_message(profile, match_id, body, client_id).message).data
+            MessageSerializer(
+                send_message(profile, match_id, body, client_id, reply_to, attachment).message,
+                context={"viewer": profile},
+            ).data
         )
 
     @database_sync_to_async
     def _mark_read(self, profile, match_id, anchor):
         mark_read(profile, match_id, anchor)
+
+    @database_sync_to_async
+    def _activity(self, active, typing):
+        return update_activity(
+            self.profile, self.match_id, self.channel_name, active=active, typing=typing
+        )
+
+    @database_sync_to_async
+    def _peer(self):
+        return peer_activity(self.profile, self.match_id)
+
+    @database_sync_to_async
+    def _delivered(self, ids):
+        return mark_delivered(self.profile, self.match_id, ids)
+
+    async def chat_activity(self, event):
+        if not await self._authenticate(self.token, self.match_id):
+            await self.close(code=4403)
+            return
+        await self.send_json({"type": "activity", **await self._peer()})
+
+    async def chat_receipts(self, event):
+        if not await self._authenticate(self.token, self.match_id):
+            await self.close(code=4403)
+            return
+        await self.send_json({"type": "receipts.changed"})
