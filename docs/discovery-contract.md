@@ -49,6 +49,10 @@ minutes. New audio URLs are not issued after voice consent is revoked.
   Repeating the same activation does not consume another token. Already-active
   Boosts do not stack or consume more tokens. Boost never bypasses safety,
   consent, distance or matching eligibility.
+- A paid Boost purchase activates itself when the M-PESA callback confirms it
+  (activation id = purchase id, so a retried callback cannot start a second one).
+  If the profile cannot be boosted at that moment (paused, location stale,
+  consent missing), the entitlement stays available for `POST /me/boost/`.
 
 Run integration tests against PostGIS with GDAL available:
 

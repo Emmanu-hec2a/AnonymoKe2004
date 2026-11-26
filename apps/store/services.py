@@ -195,9 +195,38 @@ def process_daraja_callback(*, payload: dict, provider=None) -> Purchase | None:
         },
     )
     _grant_entitlement(purchase)
+    if purchase.product.kind == Product.Kind.BOOST:
+        _activate_purchased_boost(purchase)
     log.processed_at = timezone.now()
     log.save(update_fields=["processed_at"])
     return purchase
+
+
+def _activate_purchased_boost(purchase: Purchase) -> None:
+    """Start the boost as soon as it is paid for; nobody buys one to activate later.
+
+    The purchase id is the activation id, so a repeated callback cannot start a
+    second boost. If the profile cannot be boosted right now (paused, location
+    stale, consent withdrawn) the entitlement stays available for the Boost screen.
+    """
+    from apps.discovery.boosts import activate_boost
+    from apps.profiles.models import Profile
+
+    profile = Profile.objects.filter(user=purchase.user).first()
+    if profile is None:
+        logger.warning("boost_auto_activate_skipped purchase=%s reason=no_profile", purchase.pk)
+        return
+    try:
+        boost = activate_boost(profile, purchase.id)
+    except ValueError as exc:
+        logger.warning("boost_auto_activate_skipped purchase=%s reason=%s", purchase.pk, exc)
+        return
+    logger.info(
+        "boost_auto_activated purchase=%s boost=%s expires_at=%s",
+        purchase.pk,
+        boost.pk,
+        boost.expires_at.isoformat(),
+    )
 
 
 def _grant_entitlement(purchase: Purchase) -> Entitlement:
