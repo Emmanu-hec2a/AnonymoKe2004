@@ -228,7 +228,10 @@ class MediaCompleteView(ProfileAPI):
                 else "media_size_invalid"
             )
             asset.save(update_fields=["status", "rejection_code", "updated_at"])
-            return Response(MediaStatusSerializer(asset).data, status=400)
+            return Response(
+                {**MediaStatusSerializer(asset).data, "error": {"code": asset.rejection_code}},
+                status=400,
+            )
         with transaction.atomic():
             type(request.user).objects.select_for_update().get(pk=request.user.pk, status="active")
             asset = MediaAsset.objects.select_for_update().get(pk=asset.pk, user=request.user)

@@ -15,7 +15,7 @@ from apps.profiles.services import distance_bucket
 from apps.profiles.storage import MediaStorageUnavailable, R2MediaStore
 
 from .boosts import activate_boost, boost_status
-from .services import candidate_feed
+from .pagination import candidate_page
 
 
 def discovery_error(exc):
@@ -87,12 +87,16 @@ class DiscoveryView(APIView):
         filters.is_valid(raise_exception=True)
         try:
             profile, _ = Profile.objects.get_or_create(user=request.user)
-            profiles = candidate_feed(profile, **filters.validated_data)
+            profiles, next_cursor = candidate_page(
+                profile, cursor=request.query_params.get("cursor"), **filters.validated_data
+            )
         except ValueError as exc:
             return discovery_error(exc)
         store = media_store()
         cards = [card_data(profile, store) for profile in profiles]
-        return Response({"items": cards, "next_cursor": None})
+        response = Response({"items": cards, "next_cursor": next_cursor})
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 class DiscoveryProfileView(APIView):

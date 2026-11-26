@@ -19,6 +19,7 @@ def candidate_queryset(
     max_distance_km: int | None = None,
     min_age: int | None = None,
     max_age: int | None = None,
+    ranking_at=None,
 ):
     ensure_discovery_access(me)
     try:
@@ -45,6 +46,7 @@ def candidate_queryset(
     gender_filter = Q(matching_preference__target_genders__contains=[me.gender]) | Q(
         matching_preference__target_genders__contains=["ALL"]
     )
+    ranked_at = ranking_at or timezone.now()
     candidates = (
         consented_profiles(Profile.objects.select_related("user", "matching_preference"))
         .filter(
@@ -71,7 +73,8 @@ def candidate_queryset(
             boost_active=Exists(
                 ProfileBoost.objects.filter(
                     profile_id=OuterRef("pk"),
-                    expires_at__gt=timezone.now(),
+                    expires_at__gt=ranked_at,
+                    activated_at__lte=ranked_at,
                 )
             ),
             # People who already liked you come first: one like from you makes a match.
@@ -82,6 +85,7 @@ def candidate_queryset(
                     to_profile=me,
                     action=Swipe.Action.LIKE,
                     is_undone=False,
+                    created_at__lte=ranked_at,
                 )
             ),
         )
