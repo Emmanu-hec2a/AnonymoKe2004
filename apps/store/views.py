@@ -1,3 +1,4 @@
+import logging
 import secrets
 
 from django.conf import settings
@@ -16,6 +17,8 @@ from .serializers import (
     PurchaseSerializer,
 )
 from .services import create_purchase, process_daraja_callback
+
+logger = logging.getLogger("anonymoke.store")
 
 
 class ProductListView(APIView):
@@ -80,6 +83,7 @@ class DarajaCallbackView(APIView):
             return Response({"ResultCode": 1, "ResultDesc": "Invalid payload"}, status=400)
         try:
             process_daraja_callback(payload=request.data)
-        except (ValueError, PaymentProviderError):
+        except (ValueError, PaymentProviderError) as exc:
+            logger.warning("daraja_callback_rejected reason=%s", exc)
             return Response({"ResultCode": 1, "ResultDesc": "Rejected"}, status=400)
         return Response({"ResultCode": 0, "ResultDesc": "Accepted"})

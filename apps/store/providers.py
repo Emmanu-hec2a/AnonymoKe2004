@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -7,6 +8,8 @@ from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
+
+logger = logging.getLogger("anonymoke.store")
 
 
 @dataclass(frozen=True)
@@ -72,7 +75,17 @@ class DarajaPaymentProvider(BasePaymentProvider):
         try:
             with urllib.request.urlopen(request, timeout=15) as response:  # noqa: S310
                 return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            # Daraja explains rejections in the body (errorCode/errorMessage); keep it.
+            detail = exc.read().decode("utf-8", "replace")[:500]
+            logger.warning(
+                "daraja_http_error url=%s status=%s body=%s", url.split("?")[0], exc.code, detail
+            )
+            raise PaymentProviderError(
+                "daraja_rejected" if exc.code < 500 else "daraja_unavailable"
+            ) from exc
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+            logger.warning("daraja_unreachable url=%s error=%s", url.split("?")[0], exc)
             raise PaymentProviderError("daraja_unavailable") from exc
 
     def _access_token(self) -> str:
@@ -123,12 +136,20 @@ class DarajaPaymentProvider(BasePaymentProvider):
             },
         )
         try:
-            return CheckoutInitiation(
+            initiation = CheckoutInitiation(
                 checkout_request_id=response["CheckoutRequestID"],
                 merchant_request_id=response["MerchantRequestID"],
             )
         except KeyError as exc:
+            logger.warning("daraja_stk_push_rejected response=%s", json.dumps(response)[:500])
             raise PaymentProviderError("daraja_invalid_initiation") from exc
+        logger.info(
+            "daraja_stk_push_accepted checkout=%s response_code=%s description=%s",
+            initiation.checkout_request_id,
+            response.get("ResponseCode"),
+            response.get("ResponseDescription"),
+        )
+        return initiation
 
     def query_transaction(self, *, checkout_request_id: str):
         timestamp = self._timestamp()
@@ -152,6 +173,12 @@ class DarajaPaymentProvider(BasePaymentProvider):
             result_code = int(result_code) if result_code is not None else None
         except (TypeError, ValueError):
             result_code = None
+        logger.info(
+            "daraja_stk_query checkout=%s result_code=%s result_desc=%s",
+            checkout_request_id,
+            result_code,
+            response.get("ResultDesc"),
+        )
         return TransactionQuery(
             completed=result_code == 0,
             result_code=result_code,

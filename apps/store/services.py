@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import re
 from datetime import timedelta
 
@@ -12,6 +13,7 @@ from apps.core.crypto import decrypt_text, encrypt_text
 from .models import Entitlement, FinancialTransaction, PaymentCallbackLog, Product, Purchase
 from .providers import BasePaymentProvider, default_payment_provider
 
+logger = logging.getLogger("anonymoke.store")
 KENYAN_PHONE_RE = re.compile(r"^(?:254|0)(?:7|1)\d{8}$")
 
 
@@ -105,9 +107,31 @@ def process_daraja_callback(*, payload: dict, provider=None) -> Purchase | None:
         log.processed_at = timezone.now()
         log.save(update_fields=["processed_at"])
         return purchase
+    purchase.raw_callback = _redact_callback(payload)
+    try:
+        callback_code = int(callback.get("ResultCode"))
+    except (TypeError, ValueError):
+        callback_code = None
+    logger.info(
+        "daraja_callback checkout=%s purchase=%s result_code=%s result_desc=%s",
+        checkout_id,
+        purchase.pk,
+        callback_code,
+        purchase.raw_callback["result_desc"],
+    )
+    if callback_code not in (None, 0):
+        # Safaricom reported a failure (cancelled, timed out, wrong credentials, ...).
+        # Nothing to verify: record it. 1037 is a timeout the user may still answer.
+        purchase.result_code = callback_code
+        if callback_code != 1037:
+            purchase.status = Purchase.Status.FAILED
+        purchase.save(update_fields=["result_code", "raw_callback", "status", "updated_at"])
+        log.processed_at = timezone.now()
+        log.save(update_fields=["processed_at"])
+        return purchase
+    # A reported success is confirmed with Safaricom before anything is granted.
     query = _provider(provider).query_transaction(checkout_request_id=checkout_id)
     purchase.result_code = query.result_code
-    purchase.raw_callback = _redact_callback(payload)
     if not query.completed:
         if query.result_code is not None and query.result_code != 1037:
             purchase.status = Purchase.Status.FAILED
@@ -134,6 +158,13 @@ def process_daraja_callback(*, payload: dict, provider=None) -> Purchase | None:
         or not stored_phone
         or callback_phone != stored_phone
     ):
+        logger.warning(
+            "daraja_callback_mismatch purchase=%s amount_ok=%s receipt=%s phone_ok=%s",
+            purchase.pk,
+            callback_amount == purchase.amount_kes,
+            bool(receipt),
+            bool(stored_phone) and callback_phone == stored_phone,
+        )
         purchase.status = Purchase.Status.FAILED
         purchase.save(update_fields=["result_code", "raw_callback", "status", "updated_at"])
         log.processed_at = timezone.now()
