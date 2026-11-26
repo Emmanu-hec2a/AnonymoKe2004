@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .likes import IncomingLikesView
+from .likes import IncomingLikesView, SentLikesView
 from .views import (
     MatchDetailView,
     MatchListView,
@@ -14,6 +14,7 @@ from .views import (
 
 urlpatterns = [
     path("likes/", IncomingLikesView.as_view()),
+    path("likes/sent/", SentLikesView.as_view()),
     path("swipes/", SwipeView.as_view()),
     path("swipes/undo/", UndoPassView.as_view()),
     path("matches/", MatchListView.as_view()),

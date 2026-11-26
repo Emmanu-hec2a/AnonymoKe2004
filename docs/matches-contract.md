@@ -17,6 +17,13 @@ retries queued messages whose initial moderation dispatch failed or stalled.
   are withheld unless an active Premium entitlement exists. Premium results
   contain anonymous discovery cards and a signed pagination cursor. Liking back
   uses the normal eligibility-checked swipe endpoint and a stable client UUID.
+- `GET /api/v1/likes/sent/` lists the likes you sent that have not been answered
+  or withdrawn, newest first, 20 per page with a signed cursor. No Premium is
+  needed. Each item is the anonymous discovery card plus `client_swipe_id`,
+  `liked_at` and `expires_at` (`liked_at` + 24h, when the like is withdrawn
+  automatically). Likes that became a live match are not listed; close the
+  match instead. Withdraw a listed like with `POST /api/v1/swipes/undo/` and
+  its `client_swipe_id`. `distance_bucket` is null when either side has no cell.
 - Cursors expire after 24 hours and are signed and scoped to the viewer and
   collection. After expiration, restart from the first page. Activity ordering
   can change while paging a live inbox; clients deduplicate by match ID.
