@@ -48,7 +48,7 @@ def process_safety_checkins():
     return process_due_checkins()
 
 
-@shared_task(queue="bulk")
+@shared_task(queue="default")
 def purge_safety_history():
     from .scheduling import purge_old_plans
 

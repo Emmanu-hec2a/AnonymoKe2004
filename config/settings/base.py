@@ -239,6 +239,7 @@ CELERY_TASK_ROUTES = {
     "apps.safety.tasks.scan_content": {"queue": "moderation"},
     "apps.profiles.tasks_media.process_media_asset": {"queue": "media"},
     "apps.safety.tasks.dispatch_panic_alert": {"queue": "safety"},
+    "apps.safety.tasks.purge_safety_history": {"queue": "default"},
 }
 CELERY_BEAT_SCHEDULE = {
     "recover-chat-attachments": {

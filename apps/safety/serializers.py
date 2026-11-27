@@ -264,7 +264,16 @@ class PanicAlertSerializer(serializers.ModelSerializer):
         return recipient.acknowledged_at if recipient else None
 
 
+class SafetyHistorySerializer(DateSessionSerializer):
+    viewer_role = serializers.CharField(read_only=True)
+
+    class Meta(DateSessionSerializer.Meta):
+        fields = [*DateSessionSerializer.Meta.fields, "viewer_role"]
+        read_only_fields = fields
+
+
 class SafetyAlertRecipientSerializer(serializers.ModelSerializer):
+    date_session = serializers.UUIDField(source="alert.date_session_id", read_only=True)
     session_status = serializers.CharField(source="alert.date_session.status", read_only=True)
     safe_at = serializers.DateTimeField(source="alert.date_session.safe_at", read_only=True)
     approximate_area = serializers.SerializerMethodField()
@@ -284,6 +293,7 @@ class SafetyAlertRecipientSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "alert_id",
+            "date_session",
             "status",
             "owner_alias",
             "venue_label",

@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from django.core.cache.backends.locmem import LocMemCache
 from django.db import transaction
-from django.db.models import Case, IntegerField, Value, When
+from django.db.models import Case, CharField, IntegerField, Q, Value, When
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from redis.exceptions import RedisError
@@ -31,6 +31,7 @@ from .serializers import (
     DateSessionWriteSerializer,
     PanicAlertSerializer,
     SafetyAlertRecipientSerializer,
+    SafetyHistorySerializer,
     TrustedContactSerializer,
 )
 
@@ -55,6 +56,11 @@ class SafetyThrottle(ScopedRateThrottle):
 
 
 class SafetyView(APIView):
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        response["Cache-Control"] = "no-store"
+        return response
+
     permission_classes = [IsAuthenticated]
     throttle_classes = [SafetyThrottle]
     throttle_scope = "safety_read"
@@ -92,36 +98,91 @@ def shared_plans(user):
     ).select_related("user__profile")
 
 
+def completed_plans(user):
+    """One record per completed plan; shared history remains tied to the current link."""
+    return (
+        DateSession.objects.filter(
+            Q(user=user)
+            | Q(
+                trusted_contact_user=user,
+                user__trusted_contact__linked_user=user,
+                user__status="active",
+            ),
+            status__in=["safe", "cancelled", "expired"],
+        )
+        .select_related("user__profile")
+        .annotate(
+            viewer_role=Case(
+                When(user=user, then=Value("owner")),
+                default=Value("trusted_contact"),
+                output_field=CharField(),
+            )
+        )
+    )
+
+
+class SafetyHistoryView(SafetyView):
+    def get(self, request):
+        return page_response(
+            request,
+            completed_plans(request.user),
+            SafetyHistorySerializer,
+            "completed-history-v1",
+            size=20,
+            timestamp_field="updated_at",
+        )
+
+
 class SafetyOverviewView(SafetyView):
     def get(self, request):
+        focused = request.query_params.get("view") == "active"
         active = (
             DateSession.objects.filter(user=request.user, status__in=OPEN_STATES)
             .order_by("-created_at")
             .first()
         )
         contact = trusted_contact(request.user)
+        own_alerts = PanicAlert.objects.filter(user=request.user)
+        if focused:
+            own_alerts = own_alerts.filter(date_session__status__in=OPEN_STATES)
         alerts = (
-            PanicAlert.objects.filter(user=request.user)
-            .select_related("date_session", "push_delivery")
+            own_alerts.select_related("date_session", "push_delivery")
             .prefetch_related("recipients")
             .order_by("-triggered_at")[:5]
         )
-        received = (
-            incoming(request.user)
-            .annotate(
-                priority=Case(
-                    When(status="unread", alert__date_session__status="panic", then=Value(0)),
-                    default=Value(1),
-                    output_field=IntegerField(),
-                )
+        received = incoming(request.user)
+        if focused:
+            received = received.filter(alert__date_session__status__in=OPEN_STATES)
+        received = received.annotate(
+            priority=Case(
+                When(status="unread", alert__date_session__status="panic", then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField(),
             )
-            .order_by("priority", "-created_at")
+        ).order_by("priority", "-created_at")
+        plans = shared_plans(request.user)
+        if focused:
+            plans = plans.filter(status__in=OPEN_STATES).exclude(
+                pk__in=received.values("alert__date_session_id")
+            )
+        else:
+            plans = plans.filter(updated_at__gte=timezone.now() - timedelta(days=30))
+        plans = plans.order_by("-updated_at")
+        history = completed_plans(request.user)
+        now = timezone.now()
+        latest_safe = (
+            history.filter(status="safe", safe_at__gte=now - timedelta(minutes=5))
+            .order_by("-safe_at", "-pk")
+            .first()
         )
-        plans = (
-            shared_plans(request.user)
-            .filter(updated_at__gte=timezone.now() - timedelta(days=30))
-            .order_by("-updated_at")
-        )
+        recent_completion = None
+        if latest_safe:
+            recent_completion = {
+                "session": SafetyHistorySerializer(latest_safe).data,
+                "expires_in_seconds": max(
+                    0, int((latest_safe.safe_at + timedelta(minutes=5) - now).total_seconds())
+                ),
+            }
         return Response(
             {
                 "trusted_contact": TrustedContactSerializer(contact).data if contact else None,
@@ -131,6 +192,8 @@ class SafetyOverviewView(SafetyView):
                 "incoming_alert_count": received.count(),
                 "shared_plans": DateSessionSerializer(plans[:20], many=True).data,
                 "shared_plan_count": plans.count(),
+                "history_count": history.count(),
+                "recent_completion": recent_completion,
             }
         )
 
@@ -198,14 +261,31 @@ class TrustedContactAcceptView(SafetyView):
 
 class SafetyIncomingAlertsView(SafetyView):
     def get(self, request):
+        query = incoming(request.user)
+        active = request.query_params.get("active") == "1"
+        if active:
+            query = query.filter(alert__date_session__status__in=OPEN_STATES)
         return page_response(
-            request, incoming(request.user), SafetyAlertRecipientSerializer, "incoming"
+            request,
+            query,
+            SafetyAlertRecipientSerializer,
+            "incoming-active" if active else "incoming",
         )
 
 
 class SharedPlansView(SafetyView):
     def get(self, request):
-        return page_response(request, shared_plans(request.user), DateSessionSerializer, "shared")
+        query = shared_plans(request.user)
+        active = request.query_params.get("active") == "1"
+        if active:
+            query = query.filter(status__in=OPEN_STATES).exclude(
+                pk__in=incoming(request.user)
+                .filter(alert__date_session__status__in=OPEN_STATES)
+                .values("alert__date_session_id")
+            )
+        return page_response(
+            request, query, DateSessionSerializer, "shared-active" if active else "shared"
+        )
 
 
 class SafetyAlertAcknowledgeView(SafetyView):

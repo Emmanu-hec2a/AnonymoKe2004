@@ -7,6 +7,7 @@ from .me_views import (
     PanicAlertDetailView,
     PanicAlertView,
     PanicRetryView,
+    SafetyHistoryView,
     SafetyOverviewView,
     SharedPlansView,
     TrustedContactUnlinkView,
@@ -14,6 +15,7 @@ from .me_views import (
 )
 
 urlpatterns = [
+    path("history/", SafetyHistoryView.as_view(), name="safety-history"),
     path("shared-plans/", SharedPlansView.as_view()),
     path("trusted-contact/unlink/", TrustedContactUnlinkView.as_view()),
     path("panic/<uuid:alert_id>/retry/", PanicRetryView.as_view()),
