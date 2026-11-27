@@ -13,6 +13,13 @@ logger = logging.getLogger("anonymoke.notifications")
 class PushResult:
     accepted: int = 0
     unavailable_reason: str = ""
+    retry_device_ids: tuple[int, ...] = ()
+
+
+class PushDeliveryRetry(RuntimeError):
+    def __init__(self, device_ids):
+        super().__init__("push_temporarily_unavailable")
+        self.device_ids = tuple(device_ids)
 
 
 def _skipped(event_type: str, user_id, reason: str) -> PushResult:
@@ -75,7 +82,12 @@ def send_user_event(
     event_type: str,
     match_id: str | None = None,
     actor_alias: str | None = None,
+    device_ids: list[int] | None = None,
 ) -> PushResult:
+    from apps.accounts.models import User
+
+    if not User.objects.filter(pk=user_id, status=User.Status.ACTIVE).exists():
+        return _skipped(event_type, user_id, "account_unavailable")
     # Queued pushes may outlive the relationship that created them.
     if match_id and event_type != "match.closed":
         from apps.matching.services import participant_match
@@ -95,7 +107,10 @@ def send_user_event(
 
     import firebase_admin.messaging as messaging
 
-    devices = list(DeviceToken.objects.filter(user_id=user_id, is_enabled=True))
+    query = DeviceToken.objects.filter(user_id=user_id, is_enabled=True)
+    if device_ids is not None:
+        query = query.filter(pk__in=device_ids)
+    devices = list(query)
     if not devices:
         return _skipped(event_type, user_id, "no_registered_device")
     title, body = _content(event_type, actor_alias)
@@ -104,14 +119,17 @@ def send_user_event(
         data["match_id"] = str(match_id)
     invalid_tokens = []
     accepted = 0
-    transient_failure = False
+    retry_devices = []
     for start in range(0, len(devices), 500):
         batch = devices[start : start + 500]
         message = messaging.MulticastMessage(
             tokens=[device.token for device in batch],
             notification=messaging.Notification(title=title, body=body),
             data=data,
-            android=messaging.AndroidConfig(priority="high"),
+            android=messaging.AndroidConfig(
+                priority="high",
+                notification=messaging.AndroidNotification(channel_id="anonymoke_events"),
+            ),
             apns=messaging.APNSConfig(
                 headers={"apns-priority": "10"},
                 payload=messaging.APNSPayload(
@@ -124,16 +142,18 @@ def send_user_event(
             if result.success:
                 accepted += 1
                 continue
-            error = str(result.exception).lower()
             logger.warning(
                 "push_send_failed event=%s error_type=%s",
                 event_type,
                 type(result.exception).__name__,
             )
-            if "unregistered" in error or "invalid" in error:
+            # Invalid credentials/payloads must never disable healthy devices.
+            if isinstance(
+                result.exception, (messaging.UnregisteredError, messaging.SenderIdMismatchError)
+            ):
                 invalid_tokens.append(device.token)
             else:
-                transient_failure = True
+                retry_devices.append(device.pk)
     if invalid_tokens:
         DeviceToken.objects.filter(token__in=invalid_tokens).update(is_enabled=False)
     logger.info(
@@ -144,10 +164,12 @@ def send_user_event(
         accepted,
         len(invalid_tokens),
     )
-    if accepted == 0 and transient_failure:
-        raise RuntimeError("push_temporarily_unavailable")
+    if accepted == 0 and retry_devices:
+        raise PushDeliveryRetry(retry_devices)
     return PushResult(
-        accepted=accepted, unavailable_reason="" if accepted else "no_registered_device"
+        accepted=accepted,
+        unavailable_reason="" if accepted else "no_registered_device",
+        retry_device_ids=tuple(retry_devices),
     )
 
 
