@@ -1,0 +1,4 @@
+{% extends 'compliance/base.html' %}{% block content %}
+<article class="document"><h1>{{ title }}</h1><p class="muted">{{ official_title }}</p>
+{% for block in blocks %}{% if block.heading %}<h2>{{ block.text }}</h2>{% else %}<p>{{ block.text }}</p>{% endif %}{% endfor %}</article>
+{% endblock %}

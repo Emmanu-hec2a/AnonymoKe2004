@@ -108,8 +108,9 @@ SMILE_ID_LINK_HOSTS = env.list(
 VERIFICATION_WEBHOOK_SECRET = env("VERIFICATION_WEBHOOK_SECRET", default="")
 RESEND_FROM_EMAIL = env("RESEND_FROM_EMAIL", default="AnonymoKE <noreply@anonymoke.co.ke>")
 RESEND_REPLY_TO_EMAIL = env("RESEND_REPLY_TO_EMAIL", default="")
-EMAIL_PRIVACY_URL = env("EMAIL_PRIVACY_URL", default="")
-EMAIL_TERMS_URL = env("EMAIL_TERMS_URL", default="")
+PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="https://api.anonymoke.co.ke").rstrip("/")
+EMAIL_PRIVACY_URL = env("EMAIL_PRIVACY_URL", default=f"{PUBLIC_BASE_URL}/privacy-policy/")
+EMAIL_TERMS_URL = env("EMAIL_TERMS_URL", default=f"{PUBLIC_BASE_URL}/terms/")
 RESEND_API_KEY = env("RESEND_API_KEY", default="")
 MAGIC_LINK_BASE_URL = env(
     "MAGIC_LINK_BASE_URL", default="https://api.anonymoke.co.ke/auth/magic-link#token="
@@ -242,6 +243,10 @@ CELERY_TASK_ROUTES = {
     "apps.safety.tasks.purge_safety_history": {"queue": "default"},
 }
 CELERY_BEAT_SCHEDULE = {
+    "recover-web-deletions": {
+        "task": "apps.compliance.tasks.recover_web_deletions",
+        "schedule": 60,
+    },
     "recover-chat-attachments": {
         "task": "apps.chat.media.recover_chat_attachments",
         "schedule": 60,

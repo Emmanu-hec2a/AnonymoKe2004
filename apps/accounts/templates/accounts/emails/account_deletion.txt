@@ -1,0 +1,16 @@
+AnonymoKe account deletion
+
+We received a request to delete your AnonymoKe account and associated data.
+
+Review and confirm your request in your browser:
+{{ confirmation_url }}
+
+This link expires in 10 minutes. Opening it does not delete your account.
+You must explicitly confirm deletion on the next page.
+
+If you did not request this, ignore this email. Your account remains active.
+Keep the link private. We never ask for your M-Pesa PIN.
+
+Privacy policy: {{ privacy_url }}
+Terms of use: {{ terms_url }}
+AnonymoKe · Nairobi, Kenya

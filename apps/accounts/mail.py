@@ -48,6 +48,30 @@ class ResendEmailAdapter(EmailDeliveryProvider):
         }
         if settings.RESEND_REPLY_TO_EMAIL:
             message["reply_to"] = settings.RESEND_REPLY_TO_EMAIL
+        return self._deliver(message)
+
+    def send_account_deletion(self, email: str, token: str, request_id: str) -> str:
+        context = {
+            "confirmation_url": (
+                f"{settings.PUBLIC_BASE_URL}/delete-account/verify/#token={quote(token, safe='')}"
+            ),
+            "privacy_url": f"{settings.PUBLIC_BASE_URL}/privacy-policy/",
+            "terms_url": f"{settings.PUBLIC_BASE_URL}/terms/",
+        }
+        message = {
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": [email],
+            "subject": "Confirm deletion of your AnonymoKe account",
+            "html": render_to_string("accounts/emails/account_deletion.html", context),
+            "text": render_to_string("accounts/emails/account_deletion.txt", context),
+        }
+        if settings.RESEND_REPLY_TO_EMAIL:
+            message["reply_to"] = settings.RESEND_REPLY_TO_EMAIL
+        return self._deliver(message, idempotency_key=f"account-deletion/{request_id}")
+
+    def _deliver(self, message: dict, idempotency_key: str | None = None) -> str:
+        if not settings.RESEND_API_KEY:
+            raise RuntimeError("resend_not_configured")
         req = request.Request(
             "https://api.resend.com/emails",
             data=json.dumps(message).encode(),
@@ -56,6 +80,7 @@ class ResendEmailAdapter(EmailDeliveryProvider):
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "User-Agent": "AnonymoKE/1.0 (+https://anonymoke.co.ke)",
+                **({"Idempotency-Key": idempotency_key} if idempotency_key else {}),
             },
             method="POST",
         )
@@ -67,7 +92,7 @@ class ResendEmailAdapter(EmailDeliveryProvider):
                 raise ValueError("resend_invalid_response")
             return message_id
         except HTTPError as error:
-            logger.warning("Resend rejected sign-in email (http_status=%s).", error.code)
+            logger.warning("Resend rejected transactional email (http_status=%s).", error.code)
             raise
         except (URLError, TimeoutError) as error:
             logger.warning("Resend connection failed (error_type=%s).", type(error).__name__)

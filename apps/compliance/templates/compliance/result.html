@@ -1,0 +1,3 @@
+{% extends 'compliance/base.html' %}{% block content %}<h1>{{ title }}</h1>
+{% if invalid %}<p>This confirmation link is invalid, expired, or already used. No new deletion request was created.</p><a href="{% url 'public-account-deletion' %}">Request a new confirmation link</a>
+{% else %}<p class="success" role="status">Your request has been received.</p><p>Your account has been disabled while we remove its associated data. You do not need to reinstall the app or keep this page open. Deletion is completed within 30 days under our privacy policy.</p><p>Financial transaction records are retained separately as described in the privacy policy.</p>{% endif %}{% endblock %}

@@ -44,6 +44,7 @@ include = ["apps*", "config*"]
 [tool.setuptools.package-data]
 "apps.accounts" = ["resources/*.jpeg", "templates/accounts/emails/*.html", "templates/accounts/emails/*.txt", "templates/accounts/auth/*.html"]
 "apps.profiles" = ["resources/*.xml"]
+"apps.compliance" = ["resources/*.txt", "templates/compliance/*.html"]
 
 [tool.ruff]
 line-length = 100
